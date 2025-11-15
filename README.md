@@ -1,6 +1,6 @@
 # Tiny-RAGFlow
-**重構 https://github.com/FubonDS/RRF_Embedding_Search.git**
-**embedding、reranker model engine 使用 https://github.com/FubonDS/TensorrtServer.git**
+- **重構 https://github.com/FubonDS/RRF_Embedding_Search.git**
+- **embedding、reranker model engine 使用 https://github.com/FubonDS/TensorrtServer.git**
 
 ```mermaid
 flowchart TD
