@@ -2,12 +2,21 @@ from typing import List, Dict, Any
 
 from .base_retriever import BaseRetriever
 from ..core.bm25_index import BM25Index
+from .retriever_registry import RETRIEVER_REGISTRY
 
 class BM25Retriever(BaseRetriever):
-
+    retriever_type = "bm25"
     def __init__(self, index: BM25Index, top_k: int = 5):
         super().__init__(top_k=top_k)
         self.index = index
+        
+    @classmethod
+    def from_config(cls, config):
+        index = BM25Index(config["index_config"], auto_load=True)
+        return cls(
+            index=index,
+            top_k=config.get("top_k", 5)
+        )
 
     async def retrieve(self, query: str, top_k: int = None) -> List[Dict[str, Any]]:
         if top_k is None:
@@ -43,3 +52,5 @@ class BM25Retriever(BaseRetriever):
             batch_results.append(results)
 
         return batch_results
+    
+RETRIEVER_REGISTRY[BM25Retriever.retriever_type] = BM25Retriever

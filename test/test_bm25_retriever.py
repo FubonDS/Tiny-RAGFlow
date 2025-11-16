@@ -7,8 +7,13 @@ from src.retrievers.bm25_retriever import BM25Retriever
 
 
 async def test_bm25_retriever():
-    index = BM25Index("./config/bm25.yaml", auto_load=True)
-    retriever = BM25Retriever(index, top_k=3)
+    # index = BM25Index("./config/bm25.yaml", auto_load=True)
+    # retriever = BM25Retriever(index, top_k=3)
+    
+    retriever = BM25Retriever.from_config({
+        "index_config": "./config/bm25.yaml",
+        "top_k": 3
+    })
 
     query = "hello world"
     print(f"Query = {query}")

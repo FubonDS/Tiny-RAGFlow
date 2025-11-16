@@ -2,9 +2,12 @@ import asyncio
 from typing import List, Dict, Any, Optional
 
 from .base_retriever import BaseRetriever
+from .faiss_retriever import FaissRetriever
+from .bm25_retriever import BM25Retriever
+from .retriever_registry import RETRIEVER_REGISTRY
 
 class HybridRetriever(BaseRetriever):
-    
+    retriever_type = "hybrid"
     def __init__(
         self,
         retrievers: List[BaseRetriever],
@@ -22,6 +25,60 @@ class HybridRetriever(BaseRetriever):
         if self.fusion_method == "weighted":
             if weights is None or len(weights) != len(retrievers):
                 raise ValueError("Weights must be provided and match the number of retrievers for weighted fusion.")
+    
+    @classmethod
+    def from_config(cls, config: Dict):
+        """
+        hybrid_config = {
+        "retrievers": [
+                {
+                    "type": "faiss",
+                    "config": {
+                        "index_config": "./config/faiss.yaml",
+                        "embedding_model": "m3e-base",
+                        "model_config_path": "./config/models.yaml",
+                        "top_k": 3
+                    }
+                },
+                {
+                    "type": "bm25",
+                    "config": {
+                        "index_config": "./config/bm25.yaml",
+                        "top_k": 3
+                    }
+                }
+            ],
+            "fusion_method": "rrf",
+            "rrf_k": 60,
+            "top_k": 5
+        }
+        """
+        retrievers_cfg = config["retrievers"]
+        retrievers = []
+        
+        for c_cfg in retrievers_cfg:
+            r_type = c_cfg['type']
+            r_conf = c_cfg['config']
+            
+            if r_type not in RETRIEVER_REGISTRY:
+                raise ValueError(f"Unknown retriever type: {r_type}")
+            
+            RetrieverClass = RETRIEVER_REGISTRY[r_type]
+            retriever = RetrieverClass.from_config(r_conf)
+            retrievers.append(retriever)
+            
+        fusion_method = config.get("fusion_method", "rrf")
+        weights = config.get("weights", None)
+        rrf_k = config.get("rrf_k", 60)
+        top_k = config.get("top_k", 5)
+        
+        return cls(
+            retrievers=retrievers,
+            fusion_method=fusion_method,
+            weights=weights,
+            rrf_k=rrf_k,
+            top_k=top_k
+        )
             
     
     async def retrieve(self, query: str, top_k: int = None) -> List[Dict[str, Any]]:
@@ -120,3 +177,5 @@ class HybridRetriever(BaseRetriever):
                     score_map[doc_id]["score"] += fused_score
         
         return list(score_map.values())
+    
+RETRIEVER_REGISTRY[HybridRetriever.retriever_type] = HybridRetriever

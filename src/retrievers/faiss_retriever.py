@@ -5,9 +5,11 @@ from typing import List, Dict, Any
 from .base_retriever import BaseRetriever
 from ..core.faiss_index import FaissIndex
 from ..core.client.embedding_rerank_client import EmbeddingModel
+from .retriever_registry import RETRIEVER_REGISTRY
 
 
 class FaissRetriever(BaseRetriever):
+    retriever_type = "faiss"
     def __init__(
         self,
         index: FaissIndex,
@@ -19,7 +21,20 @@ class FaissRetriever(BaseRetriever):
         self.embedder = embedder
         
         self.re_emoji = re.compile(r"[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\u2600-\u26FF\u2700-\u27BF]+")
-        
+    
+    @classmethod
+    def from_config(cls, config: Dict):
+        index = FaissIndex(config["index_config"], auto_load=True)
+        embedder = EmbeddingModel(
+            embedding_model=config["embedding_model"],
+            config_path=config["model_config_path"]
+        )
+        return cls(
+            index=index,
+            embedder=embedder,
+            top_k=config.get("top_k", 5)
+        )
+    
     async def retrieve(self, query: str, top_k: int = None) -> List[Dict[str, Any]]:
         if top_k is None:
             top_k = self.top_k
@@ -82,3 +97,5 @@ class FaissRetriever(BaseRetriever):
                 code -= 0xFEE0
             res.append(chr(code))
         return "".join(res)
+    
+RETRIEVER_REGISTRY[FaissRetriever.retriever_type] = FaissRetriever

@@ -17,6 +17,11 @@ class BaseReranker(ABC):
             logger.addHandler(handler)
             logger.setLevel(logging.INFO)
         return logger
+    
+    @classmethod
+    @abstractmethod
+    def from_config(cls, config: Dict):
+        pass
 
     @abstractmethod
     async def rerank(

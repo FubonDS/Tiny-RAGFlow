@@ -11,32 +11,31 @@ from src.retrievers.hybrid_retriever import HybridRetriever
 
 
 async def test_hybrid_retriever():
-    faiss_index = FaissIndex("./config/faiss.yaml", auto_load=True)
-
-    embedder = EmbeddingModel(
-        embedding_model="m3e-base",
-        config_path="./config/models.yaml"
-    )
-
-    faiss_retriever = FaissRetriever(
-        index=faiss_index,
-        embedder=embedder,
-        top_k=3
-    )
+    hybrid_config = {
+        "retrievers": [
+            {
+                "type": "faiss",
+                "config": {
+                    "index_config": "./config/faiss.yaml",
+                    "embedding_model": "m3e-base",
+                    "model_config_path": "./config/models.yaml",
+                    "top_k": 3
+                }
+            },
+            {
+                "type": "bm25",
+                "config": {
+                    "index_config": "./config/bm25.yaml",
+                    "top_k": 3
+                }
+            }
+        ],
+        "fusion_method": "rrf",
+        "rrf_k": 60,
+        "top_k": 3
+    }
     
-    bm25_index = BM25Index("./config/bm25.yaml", auto_load=True)
-    bm25_retriever = BM25Retriever(bm25_index, top_k=3)
-    
-    hybrid = HybridRetriever(
-        retrievers=[faiss_retriever, bm25_retriever],
-        fusion_method="rrf"
-    )
-    
-    # hybrid = HybridRetriever(
-    #     retrievers=[faiss_retriever, bm25_retriever],
-    #     fusion_method="weighted",
-    #     weights=[0.7, 0.3]
-    # )
+    hybrid = HybridRetriever.from_config(hybrid_config)
     
     results = await hybrid.retrieve("hello world", top_k=3)
     print("\n==== Hybrid Retrieve Results ====")

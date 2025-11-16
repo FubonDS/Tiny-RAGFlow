@@ -9,6 +9,10 @@ class BaseRetriever(ABC):
     def __init__(self, top_k: int = 5):
         self.top_k = top_k
 
+    @classmethod
+    @abstractmethod
+    def from_config(cls, config: Dict):
+        pass
     
     @abstractmethod
     async def retrieve(self, query: str, top_k: int = None) -> List[Dict[str, Any]]:

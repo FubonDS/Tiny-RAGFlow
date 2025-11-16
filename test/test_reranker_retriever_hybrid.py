@@ -9,10 +9,29 @@ from src.rerankers.general_reranker import GeneralReranker
 async def test():
     config = {
         "retriever": {
-            "type": "bm25",
+            "type": "hybrid",
             "config": {
-                "index_config": "./config/bm25.yaml",
-                "top_k": 3
+                    "retrievers": [
+                {
+                    "type": "faiss",
+                    "config": {
+                        "index_config": "./config/faiss.yaml",
+                        "embedding_model": "m3e-base",
+                        "model_config_path": "./config/models.yaml",
+                        "top_k": 3
+                    }
+                },
+                {
+                    "type": "bm25",
+                    "config": {
+                        "index_config": "./config/bm25.yaml",
+                        "top_k": 3
+                }
+            }
+        ],
+        "fusion_method": "rrf",
+        "rrf_k": 60,
+        "top_k": 3
             }
         },
         "reranker": {

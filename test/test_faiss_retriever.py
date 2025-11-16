@@ -1,27 +1,17 @@
 import asyncio
-import os
-import sys
 
-from src.core.faiss_index import FaissIndex
-from src.core.client.embedding_rerank_client import EmbeddingModel
 from src.retrievers.faiss_retriever import FaissRetriever
 
 
 async def test_retriever():
     print("==== Testing FaissRetriever ====")
-
-    index = FaissIndex("./config/faiss.yaml", auto_load=True)
-
-    embedder = EmbeddingModel(
-        embedding_model="m3e-base",
-        config_path="./config/models.yaml"
-    )
-
-    retriever = FaissRetriever(
-        index=index,
-        embedder=embedder,
-        top_k=3
-    )
+    
+    retriever = FaissRetriever.from_config({
+        "index_config": "./config/faiss.yaml",
+        "embedding_model": "m3e-base",
+        "model_config_path": "./config/models.yaml",
+        "top_k": 3
+    })
 
     # 測試 query
     query = "hello world"

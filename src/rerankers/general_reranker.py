@@ -14,6 +14,13 @@ class GeneralReranker(BaseReranker):
         )
         self.logger.info(f"Initialized GeneralReranker with model: {model_name}")
         
+    @classmethod
+    def from_config(cls, config: Dict):
+        return cls(
+            model_name=config["model_name"],
+            config_path=config["config_path"]
+        )
+        
     async def rerank(self, query: str, candidates: List[Dict[str, Any]]):
         """
         candidates:
