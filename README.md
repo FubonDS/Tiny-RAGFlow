@@ -15,6 +15,8 @@ flowchart TD
 
     %% Rerank Retriever delegates to Hybrid Retriever
     RR --> RH[Hybrid Retriever]
+    RR --> R1[FAISS Retriever]
+    RR --> R2[BM25 Retriever]
 
     %% Hybrid retrieves from FAISS & BM25
     RH --> R1[FAISS Retriever]
@@ -28,7 +30,8 @@ flowchart TD
 
     %% BM25 Retriever uses BM25 Index
     R2 --> BIndex[BM25 Index]
-    BIndex --> CFG2[bm25.yaml]
+    BIndex --> CFG5[tokenizer]
+    CFG5 --> CFG2[bm25.yaml]
 
     %% Reranker uses Reranking Client
     RR --> RK[General Reranker]
