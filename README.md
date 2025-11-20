@@ -145,12 +145,16 @@ rag_demo/
    python scripts/create_faiss_index.py \
        --faiss_config ./config/faiss.yaml \
        --dataset_path ./data/dataset.json \
-       --embedding_model m3e-base
+       --embedding_model m3e-base \
+       --model_config_path ./config/models.yaml \
+       --batch_size 8
    ```
 3. **搜索查詢**：
    ```bash
    python scripts/search_faiss.py \
        --faiss-config ./config/faiss.yaml \
+       --embedding_model m3e-base \ 
+       --model_config_path ./config/models.yaml \
        --query "你的查詢文本" \
        --top-k 5
    ```
@@ -158,7 +162,10 @@ rag_demo/
    ```bash
    python scripts/update_faiss_index.py \
        --faiss_config ./config/faiss.yaml \
-       --dataset_path ./data/new_data.json
+       --dataset_path ./data/new_data.json \
+       --embedding_model m3e-base \
+       --model_config_path ./config/models.yaml \
+       --batch_size 8
    ```
 
 ### 創建 BM25
@@ -182,6 +189,63 @@ rag_demo/
    python scripts/update_bm25_index.py \
        --bm25_config ./config/bm25.yaml \
        --dataset_path ./data/new_data.json
+   ```
+
+### 創建 Qdrant index (single vector version)
+1. **配置設定**：編輯 `config/qdrant.yaml`，設定分詞器和停用詞
+2. **創建索引**：
+   ```bash
+   python scripts/create_qdrant_index.py \
+       --qdrant_config ./config/qdrant.yaml \
+       --dataset_path ./data/dataset.json \
+       --embedding_model m3e-base \
+       --model_config_path ./config/models.yaml \
+       --batch_size 8
+   ```
+3. **搜索查詢**：
+   ```bash
+   python scripts/search_qdrant.py \
+       --bm25_config ./config/qdrant.yaml \
+       --embedding_model m3e-base \ 
+       --model_config_path ./config/models.yaml \
+       --query "你的查詢文本" \
+       --top-k 5
+   ```
+4. **更新索引**：
+   ```bash
+   python scripts/update_qdrant_index.py \
+       --qdrant_config ./config/qdrant.yaml \
+       --dataset_path ./data/dataset.json \
+       --embedding_model m3e-base \
+       --model_config_path ./config/models.yaml \
+       --batch_size 8
+   ```
+
+### 創建 Qdrant index (multi vector version)
+1. **配置設定**：編輯 `config/qdrant.yaml`，設定分詞器和停用詞
+2. **創建索引**：
+   ```bash
+   python scripts/create_qdrant_multi_index.py \
+       --qdrant_config ./config/qdrant.yaml \
+       --dataset_path ./data/dataset.json \
+       --embedding_model_path colbert-ir/colbertv2.0 \
+       --batch_size 8
+   ```
+3. **搜索查詢**：
+   ```bash
+   python scripts/search_qdrant_multi.py \
+       --qdrant_config ./config/qdrant.yaml \
+       --embedding_model_path colbert-ir/
+       --query "你的查詢文本" \
+       --top-k 5
+   ```
+4. **更新索引**：
+   ```bash
+   python scripts/update_qdrant_multi_index.py \
+       --qdrant_config ./config/qdrant.yaml \
+       --dataset_path ./data/dataset.json \
+       --embedding_model_path colbert-ir/colbertv2.0 \
+       --batch_size 8
    ```
 
 ## 使用方法
