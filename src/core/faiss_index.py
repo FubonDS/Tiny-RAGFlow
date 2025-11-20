@@ -111,7 +111,7 @@ class FaissIndex(BaseIndex):
         self.metadata.append(metadata)
         self.logger.info(f"Added vector with metadata: {metadata}")
         
-    def add_batch(self, vectors: np.ndarray, metadatas: List[Dict], batch_size: int = 1024):
+    def add_batch(self, vectors: np.ndarray, metadatas: List[Dict], batch_size: int = 32):
         if vectors.ndim != 2:
             self.logger.error("Vectors must be 2-dimensional")
             raise ValueError("Vectors must be shape (N, dim)")

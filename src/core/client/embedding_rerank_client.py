@@ -67,3 +67,35 @@ class RerankingModel(BaseModel):
         )
         scores = [response.data[i].embedding for i in range(len(response.data))]
         return scores
+    
+
+class MultiVectorModel():
+    def __init__(self, model_path: str):
+        self.model_path = model_path
+        self.logger = self._setup_logger()
+        self.logger.info(f'Initializing MultiVector Model from: {model_path}')
+        from fastembed import LateInteractionTextEmbedding
+        self.embedding_model = LateInteractionTextEmbedding(model_path)
+    
+    def _setup_logger(self) -> logging.Logger:
+        logger = logging.getLogger(self.__class__.__name__)
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+        return logger
+    
+    async def embed_query(self, query=None):
+        embed = self.embedding_model.query_embed(query)
+        return list(embed)[0]
+    
+    async def embed_query_batch(self, queries=None):
+        embeds = self.embedding_model.query_embed(queries)
+        embeds = list(embeds)
+        return embeds
+    
+    async def embed_documents(self, documents=None):
+        embeds = list(self.embedding_model.embed(documents))
+        return embeds

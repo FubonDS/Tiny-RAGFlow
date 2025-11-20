@@ -2,6 +2,7 @@ PyYAML
 openai
 opencc-python-reimplemented
 numpy # "numpy<2" for faiss-gpu compatibility
-faiss # faiss-gpu
+faiss-cpu # faiss-gpu
 jieba
 rank_bm25
+qdrant_client
