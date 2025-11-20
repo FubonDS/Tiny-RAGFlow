@@ -15,12 +15,20 @@ flowchart TD
 
     %% Rerank Retriever delegates to Hybrid Retriever
     RR --> RH[Hybrid Retriever]
-    RR --> R1[FAISS Retriever]
-    RR --> R2[BM25 Retriever]
+
 
     %% Hybrid retrieves from FAISS & BM25
     RH --> R1[FAISS Retriever]
     RH --> R2[BM25 Retriever]
+    RH --> R3[Qdrant Retriever]
+
+    R3 --> EVD[Qdrant Index]
+
+    EVD --> ABT[Single]
+    EVD --> ABA[Multi]
+
+    ABT --> SKG[Embedding Client]
+    ABA --> GEA[ColBert]
 
     %% FAISS Retriever uses embedding + FAISS Index
     R1 --> EMB[Embedding Client]
@@ -44,6 +52,7 @@ flowchart TD
 rag_demo/
 ├── config/                      # 配置文件目錄
 │   ├── faiss.yaml              # FAISS 索引配置（維度、索引類型、路徑等）
+│   ├── qdrant.yaml              # qdrant 索引配置（維度、索引類型、路徑等）
 │   ├── bm25.yaml               # BM25 索引配置（參數、分詞器設定）
 │   ├── models.yaml             # 模型配置（LLM、Embedding 模型的 API 設定）
 │   └── tokenizer/              # 分詞器配置目錄
@@ -51,6 +60,7 @@ rag_demo/
 │       └── user_dict.txt       # 自定義詞典
 │
 ├── data/                        # 資料存儲目錄
+│   ├── qdrant_dense_storage/            # qdrant資料index
 │   ├── dataset.json            # 原始資料集（JSON 格式）
 │   ├── index_test.faiss        # FAISS 向量索引文件
 │   └── bm25_index.pkl          # BM25 索引文件
@@ -60,6 +70,12 @@ rag_demo/
 │   ├── create_faiss_index.py   # 創建新的 FAISS 索引
 │   ├── search_faiss.py         # 搜索 FAISS 索引
 │   ├── update_faiss_index.py   # 更新現有 FAISS 索引
+│   ├── create_qdrant_index.py   # 創建新的 qdrant 索引
+│   ├── search_qdrant.py         # 搜索 qdrant 索引
+│   ├── update_qdrant_index.py   # 更新現有 qdrant 索引
+│   ├── create_qdrant_multi_index.py   # 創建新的 qdrant_multi 索引
+│   ├── qdrant_multi.py         # 搜索 qdrant_multi 索引
+│   ├── update_qdrant_multi_index.py   # 更新現有 qdrant_multi 索引
 │   ├── create_bm25_index.py    # 創建新的 BM25 索引
 │   ├── search_bm25.py          # 搜索 BM25 索引
 │   └── update_bm25_index.py    # 更新現有 BM25 索引
@@ -70,6 +86,7 @@ rag_demo/
 │   │   ├── __init__.py
 │   │   ├── base_index.py       # 索引基礎抽象類別
 │   │   ├── faiss_index.py      # FAISS 索引管理
+│   │   ├── qdrant_index.py      # qdrant 索引管理
 │   │   ├── bm25_index.py       # BM25 索引管理
 │   │   ├── tokenizer.py        # 中文分詞器（基於 jieba）
 │   │   └── client/             
@@ -80,6 +97,7 @@ rag_demo/
 │   │   ├── __init__.py
 │   │   ├── base_retriever.py   # 檢索器基礎抽象類別
 │   │   ├── faiss_retriever.py  # FAISS 檢索器
+│   │   ├── qdrant_retriever.py  # qdrant 檢索器
 │   │   ├── bm25_retriever.py   # BM25 檢索器
 │   │   ├── hybrid_retriever.py # 混合檢索器（支援多種融合策略）
 │   │   └── rerank_retriever.py # Rerank 檢索器（在檢索後重排序）
@@ -97,6 +115,7 @@ rag_demo/
 │   ├── pipelines/               
 │   │   ├── __init__.py
 │   │   ├── faiss_ingestion.py  
+│   │   ├── qdrant_ingestion.py  
 │   │   ├── bm25_ingestion.py   
 │   │   └── query_retrieval_pipeline.py  # 查詢檢索（查詢增強+檢索+融合）
 │   │
