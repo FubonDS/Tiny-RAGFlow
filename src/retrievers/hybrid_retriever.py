@@ -1,10 +1,9 @@
 import asyncio
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from .base_retriever import BaseRetriever
-from .faiss_retriever import FaissRetriever
-from .bm25_retriever import BM25Retriever
 from .retriever_registry import RETRIEVER_REGISTRY
+
 
 class HybridRetriever(BaseRetriever):
     retriever_type = "hybrid"
