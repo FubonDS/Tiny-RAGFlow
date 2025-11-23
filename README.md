@@ -9,6 +9,18 @@
 -   [資料集設定&創建 index](#資料集設定創建index)
 -   [使用方法](#使用方法)
 
+## 開發進度
+
+<details open>
+<summary><b>2025</b></summary>
+
+```plaintext
+2025-11-16 新增 faiss、bm25、hybrid retrival 方法(含創建 index、update index、search index)、reranker 召回
+2025-11-20 新增 qdrant retrival 方法(單向量、多向量)
+2025-11-23 新增多向量 reranker 召回
+TODO : evaluation module
+```
+
 ## 架構
 
 ```mermaid
