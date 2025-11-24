@@ -124,6 +124,13 @@ rag_demo/
 │   │   ├── bm25_retriever.py   # BM25 檢索器
 │   │   ├── hybrid_retriever.py # 混合檢索器（支援多種融合策略）
 │   │   └── rerank_retriever.py # Rerank 檢索器（在檢索後重排序）
+│   ├── evaluation/
+│   │   ├── __init__.py
+│   │   ├── dataset_loader.py
+│   │   ├── evaluator.py
+│   │   ├── metrics.py
+│   │   ├── report_builder.py
+│   │   ├── retriever_benchmark.py
 │   │
 │   ├── query_enhancers/         # 查詢增強模組
 │   │   ├── __init__.py
