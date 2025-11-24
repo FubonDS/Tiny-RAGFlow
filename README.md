@@ -782,6 +782,7 @@ benchmark = RetrieverBenchmark(
 
 results = await benchmark.run(
     top_k=[3, 5],
-    batch_size=3
+    batch_size=3,
+    output_dir="outputs"
 )
 ```
