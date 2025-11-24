@@ -61,12 +61,12 @@ class RetrieverEvaluator:
                 details.append({
                     "query": sample.query,
                     "ground_truth_ids": gt_ids,
-                    "results": results
+                    "results": results,
                 })
                 
                 # metadata
                 if sample.metadata is not None:
-                    details[-1]["metadata"] = sample.metadata
+                    details[-1]["sample_metadata"] = sample.metadata
 
                 for k in top_k:
                     hit_rates[k].append(hit_rate_at_k(results, gt_ids, k))
