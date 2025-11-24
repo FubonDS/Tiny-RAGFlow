@@ -45,6 +45,8 @@ class RetrieverEvaluator:
         mrr_scores = []
 
         total_samples = len(self.eval_dataset)
+        
+        details = []
 
         for start in tqdm(range(0, total_samples, batch_size), desc="Evaluating Retriever"):
             end = min(start + batch_size, total_samples)
@@ -54,8 +56,17 @@ class RetrieverEvaluator:
             batch_ground_truth = [s.ground_truth_ids for s in batch_samples]
 
             batch_results = await self.retriever.retrieve_batch(batch_queries, top_k=max_k)
-
-            for results, gt_ids in zip(batch_results, batch_ground_truth):
+            
+            for sample, results, gt_ids in zip(batch_samples, batch_results, batch_ground_truth):
+                details.append({
+                    "query": sample.query,
+                    "ground_truth_ids": gt_ids,
+                    "results": results
+                })
+                
+                # metadata
+                if sample.metadata is not None:
+                    details[-1]["metadata"] = sample.metadata
 
                 for k in top_k:
                     hit_rates[k].append(hit_rate_at_k(results, gt_ids, k))
@@ -67,12 +78,19 @@ class RetrieverEvaluator:
 
         summary = {}
 
+        summary = {"by_k": {}}
+
         for k in top_k:
-            summary[f"HitRate@{k}"] = average(hit_rates[k])
-            summary[f"Recall@{k}"] = average(recalls[k])
-            summary[f"Precision@{k}"] = average(precisions[k])
-            summary[f"NDCG@{k}"] = average(ndcgs[k])
+            summary["by_k"][k] = {
+                "HitRate": average(hit_rates[k]),
+                "Recall": average(recalls[k]),
+                "Precision": average(precisions[k]),
+                "NDCG": average(ndcgs[k]),
+            }
 
         summary["MRR"] = average(mrr_scores)
 
-        return summary
+        return {
+            "summary": summary,
+            "details": details
+        }
