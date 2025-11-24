@@ -6,8 +6,9 @@
 
 -   [架構](#架構)
 -   [代碼架構](#代碼架構)
--   [資料集設定&創建 index](#資料集設定創建index)
+-   [資料集設定&創建 index](#資料集設定創建-index)
 -   [使用方法](#使用方法)
+-   [評測方法](#評測方法)
 
 ## 開發進度
 
@@ -154,7 +155,7 @@ rag_demo/
 └── README.md
 ```
 
-## 資料集設定&創建 index
+## 資料集設定創建 index
 
 **至少要有 id 跟 text 欄位**
 
@@ -727,4 +728,60 @@ config = {
         },
         "top_k": 3
     }
+```
+
+## 評測方法
+
+**提供相應模組可快速驗測 Retrival 效果**
+
+### 準備資料集
+
+**資料集必須為以下形式**
+
+```json
+[
+    {
+        "query": "I lost my credit card, what should I do?",
+        "ground_truth_ids": [2, 3],
+        "metadata": { "category": "credit_card", "urgency": "high" }
+    },
+    {
+        "query": "How can I get a higher credit card spending limit?",
+        "ground_truth_ids": [4]
+    }
+]
+```
+
+```python
+faiss_retriever = FaissRetriever.from_config({
+    ......
+})
+bm25_retriever = BM25Retriever.from_config({
+    ......
+})
+hybrid_retriever = HybridRetriever.from_config({
+    ......
+})
+reranker_retriever = RerankRetriever.from_config({
+    ......
+})
+qdrant_retriever = QdrantMultivectorRetriever.from_config({
+    ......
+})
+retrievers = [
+        ("FAISS", faiss_retriever),
+        ("BM25", bm25_retriever),
+        ("Hybrid", hybrid_retriever),
+        ("Reranker-Hybrid", reranker_retriever),
+        ("Qdrant-Multivector", qdrant_retriever)
+    ]
+benchmark = RetrieverBenchmark(
+        retrievers,
+        dataset,
+    )
+
+results = await benchmark.run(
+    top_k=[3, 5],
+    batch_size=3
+)
 ```
