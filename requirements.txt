@@ -5,4 +5,4 @@ numpy # "numpy<2" for faiss-gpu compatibility
 faiss-cpu # faiss-gpu
 jieba
 rank_bm25
-qdrant_client
+qdrant-client
