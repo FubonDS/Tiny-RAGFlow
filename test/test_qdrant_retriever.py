@@ -17,7 +17,7 @@ async def test_retriever():
     print(f"\nQuery = {query}")
 
     # 執行 retrieve
-    results = await retriever.retrieve(query)
+    results = await retriever.retrieve(query, allowed_ids=[1])
 
     print("\n==== Retrieve Results ====")
     for item in results:
@@ -28,7 +28,7 @@ async def test_retriever():
     # 測試 batch query
     queries = ["hello world", "faiss is great"]
     print(f"\nBatch Queries = {queries}")
-    batch_results = await retriever.retrieve_batch(queries)
+    batch_results = await retriever.retrieve_batch(queries, allowed_ids_list=[[1,2], [1]])
     print("\n==== Batch Retrieve Results ====")
     for i, query_results in enumerate(batch_results):
         print(f"\n-- Results for Query: {queries[i]} --")

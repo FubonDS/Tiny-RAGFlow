@@ -35,8 +35,11 @@ async def test():
             }
         },
         "reranker": {
-            "model_name": "bge-reranker-base",
-            "config_path": "./config/models.yaml"
+            "type": "general_reranker",
+            "config": {
+                "model_name": "bge-reranker-base",
+                "config_path": "./config/models.yaml"
+            }
         },
         "top_k": 3
     }

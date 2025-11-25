@@ -1,11 +1,14 @@
-import numpy as np
-from typing import List, Dict, Any
 import asyncio
+from typing import Any, Dict, List
 
-from .base_reranker import BaseReranker
+
 from ..core.client.embedding_rerank_client import RerankingModel
+from .base_reranker import BaseReranker
+from .reranker_registry import RERANKER_REGISTRY
+
 
 class GeneralReranker(BaseReranker):
+    reranker_type = "general_reranker"
     def __init__(self, model_name: str, config_path: str):
         super().__init__()
         self.reranker = RerankingModel(
@@ -71,3 +74,5 @@ class GeneralReranker(BaseReranker):
         results = await asyncio.gather(*tasks)
 
         return results
+    
+RERANKER_REGISTRY[GeneralReranker.reranker_type] = GeneralReranker
