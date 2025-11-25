@@ -1,6 +1,8 @@
-from typing import List, Dict, Any
-from .base_retriever import BaseRetriever
+from typing import Any, Dict, List
+
 from ..rerankers.general_reranker import GeneralReranker
+from ..rerankers.reranker_registry import RERANKER_REGISTRY
+from .base_retriever import BaseRetriever
 from .retriever_registry import RETRIEVER_REGISTRY
 
 
@@ -21,14 +23,22 @@ class RerankRetriever(BaseRetriever):
         r_cfg = config["retriever"]
         r_type = r_cfg["type"]
         r_conf = r_cfg["config"]
+        
+        reranker_cfg = config["reranker"]
+        reranker_type = reranker_cfg["type"]
+        reranker_conf = reranker_cfg["config"]
 
         if r_type not in RETRIEVER_REGISTRY:
             raise ValueError(f"Unknown retriever type: {r_type}")
 
         BaseRetrieverClass = RETRIEVER_REGISTRY[r_type]
         base_retriever = BaseRetrieverClass.from_config(r_conf)
+        
+        if reranker_type not in RERANKER_REGISTRY:
+            raise ValueError(f"Unknown reranker type: {reranker_type}")
 
-        reranker = GeneralReranker.from_config(config["reranker"])
+        RerankerClass = RERANKER_REGISTRY[reranker_type]
+        reranker = RerankerClass.from_config(reranker_conf)
 
         top_k = config.get("top_k", 5)
 

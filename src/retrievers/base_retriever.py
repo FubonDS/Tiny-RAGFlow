@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
+
 class BaseRetriever(ABC):
     """
     通用 Retriever 基類

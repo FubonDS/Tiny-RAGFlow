@@ -1,8 +1,9 @@
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
-from .base_retriever import BaseRetriever
 from ..core.bm25_index import BM25Index
+from .base_retriever import BaseRetriever
 from .retriever_registry import RETRIEVER_REGISTRY
+
 
 class BM25Retriever(BaseRetriever):
     retriever_type = "bm25"

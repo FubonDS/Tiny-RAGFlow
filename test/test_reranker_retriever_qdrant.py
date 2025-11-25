@@ -1,30 +1,29 @@
 import asyncio
 
-from src.retrievers.bm25_retriever import BM25Retriever
-from src.core.bm25_index import BM25Index
 from src.retrievers.rerank_retriever import RerankRetriever
-from src.rerankers.general_reranker import GeneralReranker
 
 
 async def test():
     config = {
         "retriever": {
-            "type": "bm25",
+            "type": "faiss",
             "config": {
-                "index_config": "./config/bm25.yaml",
+                "index_config": "./config/faiss.yaml",
+                "embedding_model": "m3e-base",
+                "model_config_path": "./config/models.yaml",
                 "top_k": 3
             }
         },
         "reranker": {
-            "type": "general_reranker",
+            "type": "multivector_reranker",
             "config": {
-                "model_name": "bge-reranker-base",
-                "config_path": "./config/models.yaml"
+                "index_config": "./config/qdrant.yaml",
+                "embedding_model_path": "colbert-ir/colbertv2.0",
+                "top_k": 3
             }
         },
         "top_k": 3
     }
-    
     retriever = RerankRetriever.from_config(config)
 
     query = "hello world"

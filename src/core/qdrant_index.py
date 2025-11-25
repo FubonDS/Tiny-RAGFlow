@@ -151,7 +151,7 @@ class QdrantIndex(BaseIndex):
         )
         self.logger.info(f"Added batch of {len(vectors)} vectors.")
 
-    def search(self, vector: np.ndarray, top_k: int):
+    def search(self, vector: np.ndarray, top_k: int, allowed_ids: List[int] = None):
         if self.mode == "dense":
             if vector.ndim != 2:
                 raise ValueError("Dense vector must be shape (1, dim)")
@@ -166,17 +166,21 @@ class QdrantIndex(BaseIndex):
             if self._normalize:
                 q = self._normalize(vector)
             q = q.tolist()
+            
+        qdrant_filter = self._build_id_filter(allowed_ids) if allowed_ids else None
+            
         result = self.client.query_points(
             collection_name=self.collection_name,
             query=q,
             limit=top_k,
-            with_payload=True
+            with_payload=True,
+            query_filter=qdrant_filter
         ).points
         scores = [point.score for point in result]
         payloads = [point.payload for point in result]
         return scores, payloads
 
-    def search_batch(self, vectors, top_k: int):
+    def search_batch(self, vectors, top_k: int, allowed_ids_list: List[List[int]] = None):
         if self.mode == "dense":
             if vectors.ndim != 2:
                 raise ValueError("Vector must be shape (N, dim)")
@@ -186,22 +190,45 @@ class QdrantIndex(BaseIndex):
         elif self.mode == "multivector":
             vectors = [self._normalize(vec) for vec in vectors]
             vectors = [vec.tolist() for vec in vectors]
-        requests = [
-            models.QueryRequest(
-                query=vec,
-                limit=top_k,
-                with_payload=True
+            
+        if allowed_ids_list is not None:
+            if len(allowed_ids_list) != len(vectors):
+                raise ValueError("allowed_ids_list must match number of vectors")
+            
+        requests = []
+        for i, vec in enumerate(vectors):
+            qdrant_filter = None
+            if allowed_ids_list:
+                qdrant_filter = self._build_id_filter(allowed_ids_list[i])
+
+            requests.append(
+                models.QueryRequest(
+                    query=vec,
+                    limit=top_k,
+                    with_payload=True,
+                    filter=qdrant_filter
+                )
             )
-            for vec in vectors
-        ]
         results = self.client.query_batch_points(
             collection_name=self.collection_name,
             requests=requests,
         )
+        
         results = [request.points for request in results]
         scores = [[point.score for point in res] for res in results]
         payloads = [[point.payload for point in res] for res in results]
+        
         return scores, payloads
+    
+    def _build_id_filter(self, allowed_ids: List[int]):
+        return models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="id",
+                    match=models.MatchAny(any=allowed_ids)
+                )
+            ]
+        )
     
     def save(self):
         self.logger.info("Qdrant index is automatically saved on disk.")

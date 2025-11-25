@@ -6,7 +6,7 @@ import yaml
 from rank_bm25 import BM25Okapi
 
 from .base_index import BaseIndex
-from .tokenizer import JiebaTokenizer
+from .tokenizer import Tokenizer
 
 
 class BM25Index(BaseIndex):
@@ -22,7 +22,8 @@ class BM25Index(BaseIndex):
         self.b = config['params'].get('b', 0.75)
         self.epsilon = config['params'].get('epsilon', 0.25)
         
-        self.tokenizer = JiebaTokenizer(
+        self.tokenizer = Tokenizer(
+            backend=self.tokenizer_config.get("type", "jieba"),
             mode=self.tokenizer_config.get("mode", "search"),
             stopwords_path=self.tokenizer_config.get("stopwords_path", None),
             user_dict_path=self.tokenizer_config.get("user_dict_path", None),

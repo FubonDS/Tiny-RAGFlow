@@ -6,3 +6,6 @@ faiss-cpu # faiss-gpu
 jieba
 rank_bm25
 qdrant_client
+fastembed
+ckip_transformers
+torch

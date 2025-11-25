@@ -1,10 +1,11 @@
-import numpy as np
 import re
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
-from .base_retriever import BaseRetriever
-from ..core.faiss_index import FaissIndex
+import numpy as np
+
 from ..core.client.embedding_rerank_client import EmbeddingModel
+from ..core.faiss_index import FaissIndex
+from .base_retriever import BaseRetriever
 from .retriever_registry import RETRIEVER_REGISTRY
 
 

@@ -1,11 +1,14 @@
-import numpy as np
 import re
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
-from .base_retriever import BaseRetriever
+import numpy as np
+
+from ..core.client.embedding_rerank_client import (EmbeddingModel,
+                                                   MultiVectorModel)
 from ..core.qdrant_index import QdrantIndex
-from ..core.client.embedding_rerank_client import EmbeddingModel, MultiVectorModel
+from .base_retriever import BaseRetriever
 from .retriever_registry import RETRIEVER_REGISTRY
+
 
 class QdrantMultivectorRetriever(BaseRetriever):
     retriever_type = "qdrant_multivector"
@@ -34,14 +37,14 @@ class QdrantMultivectorRetriever(BaseRetriever):
             top_k=config.get("top_k", 5)
         )
     
-    async def retrieve(self, query: str, top_k: int = None) -> List[Dict[str, Any]]:
+    async def retrieve(self, query: str, top_k: int = None, allowed_ids: List[int] = None) -> List[Dict[str, Any]]:
         if top_k is None:
             top_k = self.top_k
             
         query = self.normalize(query)
 
         query_vec = await self.embedder.embed_query(query)
-        scores, docs = self.index.search(query_vec, top_k=top_k)
+        scores, docs = self.index.search(query_vec, top_k=top_k, allowed_ids=allowed_ids)
 
         return [
             {
@@ -51,7 +54,7 @@ class QdrantMultivectorRetriever(BaseRetriever):
             for score, doc in zip(scores, docs)
         ]
     
-    async def retrieve_batch(self, queries: List[str], top_k: int = None):
+    async def retrieve_batch(self, queries: List[str], top_k: int = None, allowed_ids_list: List[List[int]] = None):
         if top_k is None:
             top_k = self.top_k
             
@@ -59,7 +62,7 @@ class QdrantMultivectorRetriever(BaseRetriever):
         
         query_vecs = await self.embedder.embed_query_batch(queries)
         
-        scores_list, docs_list = self.index.search_batch(query_vecs, top_k)
+        scores_list, docs_list = self.index.search_batch(query_vecs, top_k, allowed_ids_list=allowed_ids_list)
         
         final_results = []
         for scores, docs in zip(scores_list, docs_list):
@@ -121,7 +124,7 @@ class QdrantRetriever(BaseRetriever):
             top_k=config.get("top_k", 5)
         )
     
-    async def retrieve(self, query: str, top_k: int = None) -> List[Dict[str, Any]]:
+    async def retrieve(self, query: str, top_k: int = None, allowed_ids: List[int] = None) -> List[Dict[str, Any]]:
         if top_k is None:
             top_k = self.top_k
             
@@ -130,7 +133,7 @@ class QdrantRetriever(BaseRetriever):
         query_vec = await self.embedder.embed_documents([query])
         query_vec = np.array(query_vec)
         
-        scores, docs = self.index.search(query_vec, top_k=top_k)
+        scores, docs = self.index.search(query_vec, top_k=top_k, allowed_ids=allowed_ids)
         
         return [
             {
@@ -140,7 +143,7 @@ class QdrantRetriever(BaseRetriever):
             for score, doc in zip(scores, docs)
         ]
         
-    async def retrieve_batch(self, queries: List[str], top_k: int = None):
+    async def retrieve_batch(self, queries: List[str], top_k: int = None, allowed_ids_list: List[List[int]] = None):
         if top_k is None:
             top_k = self.top_k
             
@@ -149,7 +152,7 @@ class QdrantRetriever(BaseRetriever):
         query_vecs = await self.embedder.embed_documents(queries)
         query_vecs = np.array(query_vecs)
         
-        scores_list, docs_list = self.index.search_batch(query_vecs, top_k)
+        scores_list, docs_list = self.index.search_batch(query_vecs, top_k, allowed_ids_list=allowed_ids_list)
         
         final_results = []
         for scores, docs in zip(scores_list, docs_list):
