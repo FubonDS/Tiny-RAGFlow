@@ -301,7 +301,8 @@ async def test_retriever():
         "index_config": "./config/faiss.yaml",
         "embedding_model": "m3e-base",
         "model_config_path": "./config/models.yaml",
-        "top_k": 3
+        "top_k": 3,
+        "dedup_key": "metadata.A" # Optional 可指定巢狀metadata之的key做為去重
     })
 
     query = "hello world"
@@ -342,7 +343,8 @@ from src.retrievers.bm25_retriever import BM25Retriever
 async def test_bm25_retriever():
     retriever = BM25Retriever.from_config({
         "index_config": "./config/bm25.yaml",
-        "top_k": 3
+        "top_k": 3,
+        "dedup_key": "metadata.A" # Optional 可指定巢狀metadata之的key做為去重
     })
 
     query = "hello world"
@@ -385,7 +387,8 @@ async def test_retriever():
         "index_config": "./config/qdrant.yaml",
         "embedding_model": "m3e-base",
         "model_config_path": "./config/models.yaml",
-        "top_k": 3
+        "top_k": 3,
+        "dedup_key": "metadata.A" # Optional 可指定巢狀metadata之的key做為去重
     })
 
     # 測試 query
@@ -431,7 +434,8 @@ async def test_retriever():
     retriever = QdrantMultivectorRetriever.from_config({
         "index_config": "./config/qdrant.yaml",
         "embedding_model_path": "colbert-ir/colbertv2.0",
-        "top_k": 3
+        "top_k": 3,
+        "dedup_key": "metadata.A" # Optional 可指定巢狀metadata之的key做為去重
     })
 
     # 測試 query

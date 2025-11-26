@@ -17,8 +17,10 @@ class QdrantMultivectorRetriever(BaseRetriever):
         index: QdrantIndex,
         embedder: MultiVectorModel,
         top_k: int = 5,
+        dedup_key: Optional[str] = None,
+        dedup_fn: Optional[Callable] = None
     ):
-        super().__init__(top_k=top_k)
+        super().__init__(top_k=top_k, dedup_key=dedup_key, dedup_fn=dedup_fn)
         self.index = index
         self.embedder = embedder
 
@@ -34,12 +36,18 @@ class QdrantMultivectorRetriever(BaseRetriever):
         return cls(
             index=index,
             embedder=embedder,
-            top_k=config.get("top_k", 5)
+            top_k=config.get("top_k", 5),
+            dedup_key=config.get("dedup_key", None),
+            dedup_fn=config.get("dedup_fn", None)
         )
     
     async def retrieve(self, query: str, top_k: int = None, allowed_ids: List[int] = None) -> List[Dict[str, Any]]:
         if top_k is None:
             top_k = self.top_k
+        if dedup_key is None:
+            dedup_key = self.dedup_key
+        if dedup_fn is None:
+            dedup_fn = self.dedup_fn
             
         query = self.normalize(query)
 
@@ -57,6 +65,10 @@ class QdrantMultivectorRetriever(BaseRetriever):
     async def retrieve_batch(self, queries: List[str], top_k: int = None, allowed_ids_list: List[List[int]] = None):
         if top_k is None:
             top_k = self.top_k
+        if dedup_key is None:
+            dedup_key = self.dedup_key
+        if dedup_fn is None:
+            dedup_fn = self.dedup_fn
             
         queries = [self.normalize(q) for q in queries]
         
