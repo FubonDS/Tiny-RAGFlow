@@ -52,9 +52,9 @@ class EmbeddingModel(BaseModel):
 class RerankingModel(BaseModel):
     def __init__(self, model_type , reranking_model, config_path='./llm_tools/configs/models.yaml'):
         if reranking_model in ['bge-reranker-large']:
-            self.client = AsyncOpenAI(api_key=self.local_api_key, base_url=self.local_base_url)
+            super().__init__(model_type, reranking_model, config_path)
             self.client_type = 'openai'
-        elif reranking_model in ['qwen3-reranker']:
+        elif reranking_model in ['qwen3_rerank_06B']:
             self.config = self.load_config(config_path)
             self.model_config = self.config[model_type][reranking_model]
             self.model = self.model_config['model']
@@ -64,8 +64,6 @@ class RerankingModel(BaseModel):
             self.logger.info(f'[{model_type}] Initializing Model: {reranking_model}')
             self.client_type = 'vllm'
             self.headers = {
-            "accept": "application/json",
-            "Authorization": "Bearer 123456",
             "Content-Type": "application/json"
             }
     
@@ -79,15 +77,17 @@ class RerankingModel(BaseModel):
             return response.data[0].embedding
         elif self.client_type == 'vllm':
             payload = {
-                "model": "reranker",
+                "model": self.model,
                 "encoding_format": "float",
-                "text_1": query,
-                "text_2": input
+                "query": query,
+                "documents": [input]
                 }
             async with httpx.AsyncClient() as client:
                     response = await client.post(self.local_base_url, headers=self.headers, json=payload)
-                    return response["data"][0]["score"]
-
+                    json_response = response.json()
+                    results = json_response.get('results', [])[0]
+                    return [results.get('relevance_score')]
+            
     async def rerank_documents(self, documents=None, query=None):
         if self.client_type == 'openai':
             response = await self.client.embeddings.create(
@@ -99,14 +99,17 @@ class RerankingModel(BaseModel):
             return scores
         elif self.client_type == 'vllm':
             payload = {
-                "model": "reranker",
+                "model": self.model,
                 "encoding_format": "float",
-                "text_1": query,
-                "text_2": [doc for doc in documents]
+                "query": query,
+                "documents": [doc for doc in documents]
                 }
             async with httpx.AsyncClient() as client:
                 response = await client.post(self.local_base_url, headers=self.headers, json=payload)
-                scores = [response["data"][i]["score"] for i in range(len(response["data"]))]
+                json_response = response.json()
+                results = json_response.get('results', [])
+                sorted_results = sorted(results, key=lambda item: item.get('index'))
+                scores = [result.get('relevance_score') for result in sorted_results]
                 return scores
 
 class MultiVectorModel():
