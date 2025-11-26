@@ -51,10 +51,7 @@ class EmbeddingModel(BaseModel):
 
 class RerankingModel(BaseModel):
     def __init__(self, model_type , reranking_model, config_path='./llm_tools/configs/models.yaml'):
-        if reranking_model in ['bge-reranker-large']:
-            super().__init__(model_type, reranking_model, config_path)
-            self.client_type = 'openai'
-        elif reranking_model in ['qwen3_rerank_06B']:
+        if "qwen" in reranking_model.lower():
             self.config = self.load_config(config_path)
             self.model_config = self.config[model_type][reranking_model]
             self.model = self.model_config['model']
@@ -66,6 +63,9 @@ class RerankingModel(BaseModel):
             self.headers = {
             "Content-Type": "application/json"
             }
+        else:
+            super().__init__(model_type, reranking_model, config_path)
+            self.client_type = 'openai'
     
     async def rerank_query(self, input=None, query=None):
         if self.client_type == 'openai':
