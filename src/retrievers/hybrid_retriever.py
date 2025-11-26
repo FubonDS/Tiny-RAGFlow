@@ -84,7 +84,7 @@ class HybridRetriever(BaseRetriever):
         if top_k is None:
             top_k = self.top_k
             
-        tasks = [r.retrieve(query, top_k=top_k) for r in self.retrievers]
+        tasks = [r.retrieve(query) for r in self.retrievers]
         result_lists = await asyncio.gather(*tasks)
         
         fused = self._fuse_results(result_lists)
@@ -95,7 +95,10 @@ class HybridRetriever(BaseRetriever):
     async def retrieve_batch(
         self, queries: List[str], top_k: int = None
     ):
-        tasks = [r.retrieve_batch(queries, top_k=top_k or self.top_k) for r in self.retrievers]
+        if top_k is None:
+            top_k = self.top_k
+            
+        tasks = [r.retrieve_batch(queries) for r in self.retrievers]
         batch_result_lists = await asyncio.gather(*tasks)
         
         final = []

@@ -1,7 +1,7 @@
 import logging
 import pickle
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional, Callable, Any
 
 import faiss
 import numpy as np
@@ -138,33 +138,131 @@ class FaissIndex(BaseIndex):
 
         self.logger.info("Batch ingest completed.")    
 
-    def search(self, vector: np.ndarray, top_k: int):
+    def search(
+            self, 
+            vector: np.ndarray, 
+            top_k: int,
+            max_retries: int = 3, 
+            expansion_factor: int = 2,
+            dedup_key: Optional[str] = None, 
+            dedup_fn: Optional[Callable] = None
+        ):
+        """
+        dedup_key : "metadata.A.B.C"  # 支持多層級的 key
+        """
         if vector.ndim != 2:
             raise ValueError("Vector must be shape (1, dim)")
 
         if self.normalize:
             vector = self._normalize(vector)
-        
-        scores, ids = self.index.search(vector, top_k)
-        docs = [self.metadata[i] for i in ids[0]]
 
-        return scores[0], docs
+        base_k = top_k
+        attempt = 0
 
-    def search_batch(self, vectors: np.ndarray, top_k: int):
+        while attempt < max_retries:
+            top_k_search = base_k * (expansion_factor ** attempt)
+            scores, ids = self.index.search(vector, top_k_search)
+
+            row_ids = ids[0]
+            row_scores = scores[0]
+            seen = set()
+            unique_scores = []
+            docs = []
+            for sid, sc in zip(row_ids, row_scores):
+                if sid < 0:
+                    continue
+                dedup_val = self._get_dedup_value(
+                    self.metadata[sid], dedup_key, dedup_fn
+                )
+                if dedup_val is None:
+                    try:
+                        dedup_val = self.metadata[sid]['text']
+                    except Exception:
+                        self.logger.warning("No 'text' field in metadata for deduplication. Using id instead.")
+                        dedup_val = sid
+
+                try:
+                    key = dedup_val if isinstance(dedup_val, (str, int, float, bool)) else hash(dedup_val)
+                except Exception:
+                    key = str(dedup_val)
+                
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                unique_scores.append(sc)
+                docs.append(self.metadata[sid])
+                if len(docs) >= top_k:
+                    break
+            if len(docs) >= top_k or attempt == max_retries - 1:
+                return np.array(unique_scores), docs
+
+            attempt += 1
+
+        return np.array(unique_scores), docs
+
+    def search_batch(
+            self, vectors: np.ndarray, 
+            top_k: int,
+            max_retries: int = 3,
+            expansion_factor: int = 2,
+            dedup_key: Optional[str] = None,
+            dedup_fn: Optional[Callable] = None
+        ):
         if vectors.ndim != 2:
             raise ValueError("Vectors must be shape (N, dim)")
 
         if self.normalize:
             vectors = self._normalize(vectors)
 
-        scores, ids = self.index.search(vectors, top_k)
+        base_k = top_k
+        attempt = 0
+        while attempt < max_retries:
+            top_k_search = base_k * (expansion_factor ** attempt)
+            scores, ids = self.index.search(vectors, top_k_search)
 
-        all_docs = []
-        for row in ids:
-            docs = [self.metadata[i] for i in row]
-            all_docs.append(docs)
+            all_docs = []
+            all_scores = []
+            for row_idx in range(len(vectors)):
+                row_ids = ids[row_idx]
+                row_scores = scores[row_idx]
+                seen = set()
+                unique_scores = []
+                docs = []
+                for sid, sc in zip(row_ids, row_scores):
+                    if sid < 0:
+                        continue
+                    dedup_val = self._get_dedup_value(
+                        self.metadata[sid], dedup_key, dedup_fn
+                    )
+                    if dedup_val is None:
+                        try:
+                            dedup_val = self.metadata[sid]['text']
+                        except Exception:
+                            self.logger.warning("No 'text' field in metadata for deduplication. Using id instead.")
+                            dedup_val = sid
 
-        return scores, all_docs
+                    try:
+                        key = dedup_val if isinstance(dedup_val, (str, int, float, bool)) else hash(dedup_val)
+                    except Exception:
+                        key = str(dedup_val)
+                    
+                    if key in seen:
+                        continue
+                    seen.add(key)
+
+                    unique_scores.append(sc)
+                    docs.append(self.metadata[sid])
+                    if len(docs) >= top_k:
+                        break
+                all_docs.append(docs)
+                all_scores.append(np.array(unique_scores))
+            
+            if all(len(docs) >= top_k for docs in all_docs) or attempt == max_retries - 1:
+                return all_scores, all_docs
+
+            attempt += 1
+        return all_scores, all_docs 
     
     def save(self):
         os.makedirs(os.path.dirname(self.index_path), exist_ok=True)

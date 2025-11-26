@@ -18,12 +18,14 @@ async def main():
         "index_config": "./config/faiss.yaml",
         "embedding_model": "m3e-base",
         "model_config_path": "./config/models.yaml",
-        "top_k": 3
+        "top_k": 3,
+        "dedup_key": "metadata.A"
     })
     # bm25
     bm25_retriever = BM25Retriever.from_config({
         "index_config": "./config/bm25.yaml",
-        "top_k": 3
+        "top_k": 3,
+        "dedup_key": "metadata.A"
     })
     
     # htbrid
@@ -35,14 +37,16 @@ async def main():
                     "index_config": "./config/faiss.yaml",
                     "embedding_model": "m3e-base",
                     "model_config_path": "./config/models.yaml",
-                    "top_k": 3
+                    "top_k": 3,
+                    "dedup_key": "metadata.A"
                 }
             },
             {
                 "type": "bm25",
                 "config": {
                     "index_config": "./config/bm25.yaml",
-                    "top_k": 3
+                    "top_k": 3,
+                    "dedup_key": "metadata.A"
                 }
             }
         ],
@@ -64,14 +68,16 @@ async def main():
                         "index_config": "./config/faiss.yaml",
                         "embedding_model": "m3e-base",
                         "model_config_path": "./config/models.yaml",
-                        "top_k": 3
+                        "top_k": 3,
+                        "dedup_key": "metadata.A"
                     }
                 },
                 {
                     "type": "bm25",
                     "config": {
                         "index_config": "./config/bm25.yaml",
-                        "top_k": 3
+                        "top_k": 3,
+                        "dedup_key": "metadata.A"
                 }
             }
         ],
@@ -83,7 +89,7 @@ async def main():
         "reranker": {
             "type": "general_reranker",
             "config": {
-                "model_name": "bge-reranker-base",
+                "model_name": "bge-reranker-large",
                 "config_path": "./config/models.yaml"
             }
         },
@@ -92,10 +98,17 @@ async def main():
     
     reranker_retriever = RerankRetriever.from_config(config)
     
-    qdrant_retriever = QdrantMultivectorRetriever.from_config({
+    # qdrant_retriever = QdrantMultivectorRetriever.from_config({
+    #     "index_config": "./config/qdrant.yaml",
+    #     "embedding_model_path": "colbert-ir/colbertv2.0",
+    #     "top_k": 3
+    # })
+    qdrant_retriever = QdrantRetriever.from_config({
         "index_config": "./config/qdrant.yaml",
-        "embedding_model_path": "colbert-ir/colbertv2.0",
-        "top_k": 3
+        "embedding_model": "m3e-base",
+        "model_config_path": "./config/models.yaml",
+        "top_k": 3,
+        "dedup_key": "metadata.A"
     })
     
     
@@ -104,7 +117,7 @@ async def main():
         ("BM25", bm25_retriever),
         ("Hybrid", hybrid_retriever),
         ("Reranker-Hybrid", reranker_retriever),
-        ("Qdrant-Multivector", qdrant_retriever)
+        ("Qdrant-Single", qdrant_retriever)
     ]
     
     benchmark = RetrieverBenchmark(

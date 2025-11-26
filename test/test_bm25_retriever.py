@@ -12,27 +12,32 @@ async def test_bm25_retriever():
     
     retriever = BM25Retriever.from_config({
         "index_config": "./config/bm25.yaml",
-        "top_k": 3
+        "top_k": 3,
+        "dedup_key": "metadata.A"
     })
 
-    query = "hello world"
+    query = "How to apply for a new credit card from the bank?"
     print(f"Query = {query}")
 
-    results = await retriever.retrieve(query)
+    results = await retriever.retrieve(
+        query,
+        )
 
     print("\n===== BM25 Retrieve Results =====")
     for r in results:
-        print(f"{r['score']:.4f} → id={r['metadata'].get('id')}  text={r['metadata'].get('text')}")
+        print(f"{r['score']:.4f} → id={r['metadata'].get('id')}  text={r['metadata'].get('text')} metadata={r['metadata'].get('metadata')}")
         
     # batch query test
-    queries = ["hello world", "bm25 index"]
+    queries = ["How to apply for a new credit card from the bank?", "bm25 index"]
     print(f"\nBatch Queries = {queries}")
-    batch_results = await retriever.retrieve_batch(queries)
+    batch_results = await retriever.retrieve_batch(
+        queries,
+    )
     print("\n===== BM25 Batch Retrieve Results =====")
     for i, query_results in enumerate(batch_results):
         print(f"\n-- Results for Query: {queries[i]} --")
         for r in query_results:
-            print(f"{r['score']:.4f} → id={r['metadata'].get('id')}  text={r['metadata'].get('text')}")
+            print(f"{r['score']:.4f} → id={r['metadata'].get('id')}  text={r['metadata'].get('text')} metadata={r['metadata'].get('metadata')}")
 
 
 if __name__ == "__main__":

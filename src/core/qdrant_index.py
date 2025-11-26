@@ -2,7 +2,7 @@ import os
 import pickle
 import yaml
 import numpy as np
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional, Callable
 
 from qdrant_client import QdrantClient, models
 from .base_index import BaseIndex
@@ -151,36 +151,98 @@ class QdrantIndex(BaseIndex):
         )
         self.logger.info(f"Added batch of {len(vectors)} vectors.")
 
-    def search(self, vector: np.ndarray, top_k: int, allowed_ids: List[int] = None):
+    def search(
+        self,
+        vector: np.ndarray,
+        top_k: int,
+        allowed_ids: List[int] = None,
+        max_retries: int = 3,
+        expansion_factor: int = 2,
+        dedup_key: Optional[str] = None,
+        dedup_fn: Optional[Callable] = None
+    ):
+        """Search with optional deduplication. Will expand the candidate limit if
+        dedup removes items, up to `max_retries` attempts.
+        """
         if self.mode == "dense":
             if vector.ndim != 2:
                 raise ValueError("Dense vector must be shape (1, dim)")
             q = vector
-            if self._normalize:
+            if self.normalize:
                 q = self._normalize(vector)
             q = q[0].tolist()
         elif self.mode == "multivector":
             if vector.ndim != 2:
                 raise ValueError("Multivector must be shape (T, dim)")
             q = vector
-            if self._normalize:
+            if self.normalize:
                 q = self._normalize(vector)
             q = q.tolist()
-            
-        qdrant_filter = self._build_id_filter(allowed_ids) if allowed_ids else None
-            
-        result = self.client.query_points(
-            collection_name=self.collection_name,
-            query=q,
-            limit=top_k,
-            with_payload=True,
-            query_filter=qdrant_filter
-        ).points
-        scores = [point.score for point in result]
-        payloads = [point.payload for point in result]
+
+        base_k = top_k
+        attempt = 0
+        while attempt < max_retries:
+            top_k_search = base_k * (expansion_factor ** attempt)
+            qdrant_filter = self._build_id_filter(allowed_ids) if allowed_ids else None
+
+            result = self.client.query_points(
+                collection_name=self.collection_name,
+                query=q,
+                limit=top_k_search,
+                with_payload=True,
+                query_filter=qdrant_filter,
+            ).points
+
+            seen = set()
+            scores = []
+            payloads = []
+            for point in result:
+                payload = point.payload or {}
+                try:
+                    dedup_val = self._get_dedup_value(payload, dedup_key, dedup_fn)
+                except Exception:
+                    self.logger.debug("_get_dedup_value failed, falling back to payload['text'] or id")
+                    dedup_val = None
+
+                if dedup_val is None:
+                    dedup_val = payload.get('text') if isinstance(payload, dict) else None
+                if dedup_val is None:
+                    dedup_val = getattr(point, 'id', None)
+
+                try:
+                    key = dedup_val if isinstance(dedup_val, (str, int, float, bool)) else hash(dedup_val)
+                except Exception:
+                    key = str(dedup_val)
+
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                scores.append(point.score)
+                payloads.append(payload)
+                if len(payloads) >= top_k:
+                    break
+
+            if len(payloads) >= top_k or attempt == max_retries - 1:
+                return scores, payloads
+
+            attempt += 1
+
         return scores, payloads
 
-    def search_batch(self, vectors, top_k: int, allowed_ids_list: List[List[int]] = None):
+    def search_batch(
+        self,
+        vectors,
+        top_k: int,
+        allowed_ids_list: List[List[int]] = None,
+        max_retries: int = 3,
+        expansion_factor: int = 2,
+        dedup_key: Optional[str] = None,
+        dedup_fn: Optional[Callable] = None
+    ):
+        """Batch search. For simplicity and to support per-query expansion for
+        deduplication, each vector is queried individually (not using query_batch_points).
+        """
         if self.mode == "dense":
             if vectors.ndim != 2:
                 raise ValueError("Vector must be shape (N, dim)")
@@ -190,35 +252,69 @@ class QdrantIndex(BaseIndex):
         elif self.mode == "multivector":
             vectors = [self._normalize(vec) for vec in vectors]
             vectors = [vec.tolist() for vec in vectors]
-            
-        if allowed_ids_list is not None:
-            if len(allowed_ids_list) != len(vectors):
-                raise ValueError("allowed_ids_list must match number of vectors")
-            
-        requests = []
-        for i, vec in enumerate(vectors):
-            qdrant_filter = None
-            if allowed_ids_list:
-                qdrant_filter = self._build_id_filter(allowed_ids_list[i])
 
-            requests.append(
-                models.QueryRequest(
+        if allowed_ids_list is not None and len(allowed_ids_list) != len(vectors):
+            raise ValueError("allowed_ids_list must match number of vectors")
+
+        all_scores = []
+        all_payloads = []
+
+        for i, vec in enumerate(vectors):
+            allowed_ids = allowed_ids_list[i] if allowed_ids_list else None
+            base_k = top_k
+            attempt = 0
+            scores = []
+            payloads = []
+            while attempt < max_retries:
+                top_k_search = base_k * (expansion_factor ** attempt)
+                qdrant_filter = self._build_id_filter(allowed_ids) if allowed_ids else None
+
+                result = self.client.query_points(
+                    collection_name=self.collection_name,
                     query=vec,
-                    limit=top_k,
+                    limit=top_k_search,
                     with_payload=True,
-                    filter=qdrant_filter
-                )
-            )
-        results = self.client.query_batch_points(
-            collection_name=self.collection_name,
-            requests=requests,
-        )
-        
-        results = [request.points for request in results]
-        scores = [[point.score for point in res] for res in results]
-        payloads = [[point.payload for point in res] for res in results]
-        
-        return scores, payloads
+                    query_filter=qdrant_filter,
+                ).points
+
+                seen = set()
+                scores = []
+                payloads = []
+                for point in result:
+                    payload = point.payload or {}
+                    try:
+                        dedup_val = self._get_dedup_value(payload, dedup_key, dedup_fn)
+                    except Exception:
+                        self.logger.debug("_get_dedup_value failed, falling back to payload['text'] or id")
+                        dedup_val = None
+
+                    if dedup_val is None:
+                        dedup_val = payload.get('text') if isinstance(payload, dict) else None
+                    if dedup_val is None:
+                        dedup_val = getattr(point, 'id', None)
+
+                    try:
+                        key = dedup_val if isinstance(dedup_val, (str, int, float, bool)) else hash(dedup_val)
+                    except Exception:
+                        key = str(dedup_val)
+
+                    if key in seen:
+                        continue
+                    seen.add(key)
+
+                    scores.append(point.score)
+                    payloads.append(payload)
+                    if len(payloads) >= top_k:
+                        break
+
+                if len(payloads) >= top_k or attempt == max_retries - 1:
+                    break
+                attempt += 1
+
+            all_scores.append(scores)
+            all_payloads.append(payloads)
+
+        return all_scores, all_payloads
     
     def _build_id_filter(self, allowed_ids: List[int]):
         return models.Filter(
