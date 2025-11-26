@@ -2,6 +2,8 @@ import logging
 
 import yaml
 from openai import AsyncOpenAI
+import httpx
+
 
 class BaseModel:
     def __init__(self, model_type, model_name, config_path='./configs/models.yaml'):
@@ -48,26 +50,67 @@ class EmbeddingModel(BaseModel):
         return embs
 
 class RerankingModel(BaseModel):
-    def __init__(self, reranking_model, config_path='./llm_tools/configs/models.yaml'):
-        super().__init__('reranking_models', reranking_model, config_path)
+    def __init__(self, model_type , reranking_model, config_path='./llm_tools/configs/models.yaml'):
+        if "qwen" in reranking_model.lower():
+            self.config = self.load_config(config_path)
+            self.model_config = self.config[model_type][reranking_model]
+            self.model = self.model_config['model']
+            self.logger = self._setup_logger()
+            self.local_api_key = self.model_config['local_api_key']
+            self.local_base_url = self.model_config['local_base_url']
+            self.logger.info(f'[{model_type}] Initializing Model: {reranking_model}')
+            self.client_type = 'vllm'
+            self.headers = {
+            "Content-Type": "application/json"
+            }
+        else:
+            super().__init__(model_type, reranking_model, config_path)
+            self.client_type = 'openai'
     
     async def rerank_query(self, input=None, query=None):
-        response = await self.client.embeddings.create(
-            model=self.model,
-            input=input,
-            extra_body={"query": query}
-        )
-        return response.data[0].embedding
-    
+        if self.client_type == 'openai':
+            response = await self.client.embeddings.create(
+                model=self.model,
+                input=input,
+                extra_body={"query": query}
+            )
+            return response.data[0].embedding
+        elif self.client_type == 'vllm':
+            payload = {
+                "model": self.model,
+                "encoding_format": "float",
+                "query": query,
+                "documents": [input]
+                }
+            async with httpx.AsyncClient() as client:
+                    response = await client.post(self.local_base_url, headers=self.headers, json=payload)
+                    json_response = response.json()
+                    results = json_response.get('results', [])[0]
+                    return [results.get('relevance_score')]
+            
     async def rerank_documents(self, documents=None, query=None):
-        response = await self.client.embeddings.create(
-            model=self.model,
-            input=documents,
-            extra_body={"query": query}
-        )
-        scores = [response.data[i].embedding for i in range(len(response.data))]
-        return scores
-    
+        if self.client_type == 'openai':
+            response = await self.client.embeddings.create(
+                model=self.model,
+                input=documents,
+                extra_body={"query": query}
+            )
+            scores = [response.data[i].embedding for i in range(len(response.data))]
+            return scores
+        elif self.client_type == 'vllm':
+            payload = {
+                "model": self.model,
+                "encoding_format": "float",
+                "query": query,
+                "documents": [doc for doc in documents]
+                }
+            async with httpx.AsyncClient() as client:
+                response = await client.post(self.local_base_url, headers=self.headers, json=payload)
+                json_response = response.json()
+                results = json_response.get('results', [])
+                sorted_results = sorted(results, key=lambda item: item.get('index'))
+                scores = [result.get('relevance_score') for result in sorted_results]
+                return scores
 
 class MultiVectorModel():
     def __init__(self, model_path: str):
