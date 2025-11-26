@@ -50,21 +50,21 @@ class EmbeddingModel(BaseModel):
         return embs
 
 class RerankingModel(BaseModel):
-    def __init__(self, model_type , reranking_model, config_path='./llm_tools/configs/models.yaml'):
+    def __init__(self, reranking_model, config_path='./llm_tools/configs/models.yaml'):
         if "qwen" in reranking_model.lower():
             self.config = self.load_config(config_path)
-            self.model_config = self.config[model_type][reranking_model]
+            self.model_config = self.config['reranking_models'][reranking_model]
             self.model = self.model_config['model']
             self.logger = self._setup_logger()
             self.local_api_key = self.model_config['local_api_key']
-            self.local_base_url = self.model_config['local_base_url']
-            self.logger.info(f'[{model_type}] Initializing Model: {reranking_model}')
+            self.local_base_url = self.model_config['local_base_url'] + "/rerank"
+            self.logger.info(f'[RerankingModel] Initializing Model: {reranking_model}')
             self.client_type = 'vllm'
             self.headers = {
             "Content-Type": "application/json"
             }
         else:
-            super().__init__(model_type, reranking_model, config_path)
+            super().__init__('reranking_models', reranking_model, config_path)
             self.client_type = 'openai'
     
     async def rerank_query(self, input=None, query=None):
