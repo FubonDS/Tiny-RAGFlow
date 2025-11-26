@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Callable
 
 
 class BaseRetriever(ABC):
@@ -7,8 +7,16 @@ class BaseRetriever(ABC):
     通用 Retriever 基類
     所有 Retriever 都應該繼承這個 class
     """
-    def __init__(self, top_k: int = 5):
+    def __init__(
+            self, 
+            top_k: int = 5,
+            dedup_key: str = None,
+            dedup_fn: Callable = None
+
+        ):
         self.top_k = top_k
+        self.dedup_key = dedup_key
+        self.dedup_fn = dedup_fn
 
     @classmethod
     @abstractmethod

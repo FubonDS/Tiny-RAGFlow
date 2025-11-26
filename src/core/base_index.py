@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Dict, List, Optional, Callable, Any, Union
 
 
 class BaseIndex(ABC):
@@ -22,6 +22,24 @@ class BaseIndex(ABC):
             logger.addHandler(handler)
             logger.setLevel(logging.INFO)
         return logger
+    
+    def _get_dedup_value(self, meta: Dict, dedup_key: Optional[str], dedup_fn: Optional[Callable]) -> Optional[Any]:
+        if dedup_fn:
+            try:
+                return dedup_fn(meta)
+            except Exception:
+                self.logger.warning("Dedup function raised an exception. Skipping deduplication for this item.")
+                return None
+        if dedup_key:
+            parts = dedup_key.split('.')
+            v = meta
+            try:
+                for p in parts:
+                    v = v[p]
+                return v
+            except Exception:
+                return None
+        return None    
     
     @abstractmethod
     def add(self, item, metadata):
