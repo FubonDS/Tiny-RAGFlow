@@ -55,7 +55,7 @@ class QueryEnhanceRetriever:
     @classmethod
     def from_config(cls, config:Dict):
         """
-        hybrid_config = {
+        expansion_config = {
         "retrievers": [
                 {
                     "type": "faiss",
@@ -119,11 +119,18 @@ class QueryEnhanceRetriever:
             tasks = [r.retrieve(query) for r in self.retrievers]
             result_lists = await asyncio.gather(*tasks)
             if res is None:
-                res = result_lists
+                res = []
+                for i in range(len(result_lists)):
+                    res.append([result_lists[i]])
             else:
                 for i in range(len(res)):
-                    res[i].extend(result_lists[i])
+                    res[i].append(result_lists[i])
         
+        for i in range(len(res)):
+            fused = self._fuse_results(res[i])
+            fused.sort(key=lambda x: x["score"], reverse=True)
+            res[i] = fused[:top_k] if top_k else fused
+
         fused = self._fuse_results(res)
         
         fused.sort(key=lambda x: x["score"], reverse=True)
@@ -131,14 +138,13 @@ class QueryEnhanceRetriever:
     
     async def retrieve_batch(self, queries: List[str]):
         top_k = self.top_k
-
-        for query in queries:
+        for query in queries: 
             tasks = [self._expand_queries(query) for query in queries]
             expanded_queries_list = await asyncio.gather(*tasks)
             
             for i in range(len(expanded_queries_list)):
                     expanded_queries_list[i].extend([queries[i]])
-        
+
         batch_final = []
         Q = len(expanded_queries_list)
         for qi in range(Q):
@@ -147,10 +153,18 @@ class QueryEnhanceRetriever:
                 qi_results = None
                 result_lists = await asyncio.gather(*tasks)
                 if qi_results is None:
-                    qi_results = result_lists
+                    qi_results = []
+                    for i in range(len(result_lists)):
+                        qi_results.append([result_lists[i]])
                 else:
                     for i in range(len(qi_results)):
-                        qi_results[i].extend(result_lists[i])
+                        qi_results[i].append(result_lists[i])
+            
+            # TODO: fuse 在一次
+            for i in range(len(qi_results)):
+                fused = self._fuse_results(qi_results[i])
+                fused.sort(key=lambda x: x["score"], reverse=True)
+                qi_results[i] = fused[:top_k] if top_k else fused
             
             fused = self._fuse_results(qi_results)
             fused.sort(key=lambda x: x["score"], reverse=True)
@@ -161,6 +175,7 @@ class QueryEnhanceRetriever:
     async def _expand_queries(self, query: str) -> List[str]:
         prompt = QUERY_EXPAND_PROMPT.format(user_query=query)
         response, _ = await self.llmchater.chat(prompt)
+        response = self._normalize_json_response(response)
         response = json.loads(response)['expanded_queries']
         return response
 
