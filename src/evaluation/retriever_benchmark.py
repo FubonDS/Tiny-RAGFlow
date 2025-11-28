@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 import os
+import time
 from datetime import datetime
 import logging
 from .dataset_loader import EvaluationDataset
@@ -40,6 +41,7 @@ class RetrieverBenchmark:
         os.makedirs(output_dir, exist_ok=True)
         
         results_list = []
+        time_elapsed = {}
 
         for name, retriever in self.retrievers:
             evaluator = RetrieverEvaluator(
@@ -47,7 +49,11 @@ class RetrieverBenchmark:
                 self.eval_dataset
             )
 
+            start_time = time.time()
             results = await evaluator.evaluate(top_k=top_k, batch_size=batch_size)
+            end_time = time.time()
+            elapsed = end_time - start_time
+            time_elapsed[name] = elapsed
             
             metrics = results["summary"]
             details = results["details"]
@@ -81,14 +87,16 @@ class RetrieverBenchmark:
         
         report_console = BenchmarkReportBuilder.build_console(results_list, sort_by_str)
         report_markdown = BenchmarkReportBuilder.build_markdown(results_list, sort_by_str)
-        report_json = BenchmarkReportBuilder.build_json(results_list, sort_by_str)
+        report_json = BenchmarkReportBuilder.build_json(results_list, sort_by_str, time_elapsed)
         
         # save reports
         file_name = f"retriever_benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         with open(os.path.join(output_dir, f"{file_name}.md"), "w") as f:
             f.write(report_markdown)
+            self.logger.info(f"Markdown report saved to {file_name}.md")
         with open(os.path.join(output_dir, f"{file_name}.json"), "w") as f:
             f.write(report_json)
+            self.logger.info(f"JSON report saved to {file_name}.json")
         
         self.logger.info("Retriever Benchmark Completed.")
         

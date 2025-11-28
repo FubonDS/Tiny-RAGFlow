@@ -76,10 +76,11 @@ class BenchmarkReportBuilder:
         return "\n".join(lines)
 
     @staticmethod
-    def build_json(results: List[Dict], sort_by: str) -> str:
+    def build_json(results: List[Dict], sort_by: str, elapsed_time: None) -> str:
         import json
         output = {
             "sorted_by": sort_by,
+            "elapsed_time": elapsed_time,
             "results": results
         }
         return json.dumps(output, indent=2, ensure_ascii=False)
