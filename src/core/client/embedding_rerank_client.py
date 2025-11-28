@@ -142,3 +142,46 @@ class MultiVectorModel():
     async def embed_documents(self, documents=None):
         embeds = list(self.embedding_model.embed(documents))
         return embeds
+
+class JinaForRerankingModel():
+    def __init__(self, model_path: str):
+        self.model_path = model_path
+        self.logger = self._setup_logger()
+        self.logger.info(f'Initializing JinaForReranking Model from: {model_path}')
+        import torch
+        from .jina.jina_for_ranking import JinaForRanking
+        self.model = JinaForRanking.from_pretrained(model_path, dtype="auto").to("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.eval()                         
+    
+    
+    def _setup_logger(self) -> logging.Logger:
+        logger = logging.getLogger(self.__class__.__name__)
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+        return logger
+    
+    async def rerank_documents(self, documents=None, query=None):
+        respoonse = self.model.rerank_batch(
+            [query],
+            [documents],
+            batch_size=1
+        )
+        result = respoonse[0]
+        scores = [r['relevance_score'] for r in result]
+        return scores   
+    
+    async def rerank_documents_batch(self, documents_list=None, query_list=None):
+        response = self.model.rerank_batch(
+            query_list,
+            documents_list,
+            batch_size=1
+        )
+        results = []
+        for result in response:
+            scores = [r['relevance_score'] for r in result]
+            results.append(scores)
+        return results
