@@ -12,6 +12,9 @@ class JiebaTokenizerBackend:
             return list(jieba.cut_for_search(text))
         return list(jieba.cut(text))
     
+    def tokenize_batch(self, texts):
+        return [self.tokenize(text) for text in texts]
+    
 class CKIPTokenizerBackend:
     def __init__(self, device=None, user_dict_path=None):
         import torch
@@ -22,10 +25,8 @@ class CKIPTokenizerBackend:
 
         self.ws_driver = CkipWordSegmenter(device=device)
         self.user_terms = self.load_user_dict(user_dict_path) if user_dict_path else set()
-
-    def tokenize(self, text):
-        tokens = self.ws_driver([text])[0]
         
+    def merge_user_terms(self, tokens):
         merged = []
         i = 0
         n = len(tokens)
@@ -44,7 +45,19 @@ class CKIPTokenizerBackend:
                 merged.append(tokens[i])
                 i += 1
 
-        return merged 
+        return merged
+
+    def tokenize(self, text):
+        tokens = self.ws_driver([text])[0]
+        if self.user_terms:
+            tokens = self.merge_user_terms(tokens)
+        return tokens 
+    
+    def tokenize_batch(self, texts):
+        batch_tokens = self.ws_driver(texts)
+        if self.user_terms:
+            batch_tokens = [self.merge_user_terms(tokens) for tokens in batch_tokens]
+        return batch_tokens
     
     def load_user_dict(self, path):
         user_terms = set()
@@ -177,7 +190,11 @@ class Tokenizer:
         return tokens
     
     def tokenize_batch(self, texts):
-        return [self.tokenize(text) for text in texts]
+        texts = [self.normalize(text) if text is not None else "" for text in texts]
+        batch_tokens = self.backend.tokenize_batch(texts)
+        batch_tokens = [self._remove_stopwords(tokens) for tokens in batch_tokens]
+        batch_tokens = [self._filter_tokens(tokens) for tokens in batch_tokens]
+        return batch_tokens
     
     def __call__(self, text: str):
         return self.tokenize(text)
