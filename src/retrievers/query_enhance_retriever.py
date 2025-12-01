@@ -1,15 +1,12 @@
-import re
-from typing import Any, Dict, List, Optional, Callable
-
-import numpy as np
-import json
 import asyncio
+import re
+import json
+from typing import Any, Dict, List, Optional
 
-from ..core.client.embedding_rerank_client import EmbeddingModel
-from ..core.faiss_index import FaissIndex
+
+from ..core.client.llm_client import AsyncLLMChat
 from .base_retriever import BaseRetriever
 from .retriever_registry import RETRIEVER_REGISTRY
-from ..core.client.llm_client import AsyncLLMChat
 
 QUERY_EXPAND_PROMPT = """
 You are an AI language model assistant. Your task is to generate 3 \n 
@@ -35,7 +32,7 @@ the user overcome some of the limitations of the distance-based similarity searc
 擴展查詢：
 """
 
-class QueryEnhanceRetriever:
+class QueryEnhanceRetriever(BaseRetriever):
     retriever_type = "queryenhance"
     def __init__(self, 
                  retrievers,
@@ -45,12 +42,16 @@ class QueryEnhanceRetriever:
                  rrf_k: int = 60,
                  weights: Optional[List[float]] = None
                 ):
+        super().__init__(top_k=top_k)
         self.retrievers = retrievers
         self.llmchater = llmchater
         self.fusion_method = fusion_method
         self.rrf_k = rrf_k
         self.weights = weights
-        self.top_k = top_k
+        
+        if self.fusion_method == "weighted":
+            if weights is None or len(weights) != len(retrievers):
+                raise ValueError("Weights must be provided and match the number of retrievers for weighted fusion.")
     
     @classmethod
     def from_config(cls, config:Dict):
@@ -109,68 +110,78 @@ class QueryEnhanceRetriever:
                 top_k = config.get("top_k", 5)
                 )
     
-    async def retrieve(self, query: str) -> List[Dict[str, Any]]:
-        top_k = self.top_k
-        response = await self._expand_queries(query)
-        all_queries = [query] + response
+    async def retrieve(self, query: str, top_k: int = None) -> List[Dict[str, Any]]:
+        if top_k is None:
+            top_k = self.top_k
+            
+        expansions = await self._expand_queries(query)
+        all_queries = [query] + expansions
 
-        res = None
-        for query in all_queries:
-            tasks = [r.retrieve(query) for r in self.retrievers]
-            result_lists = await asyncio.gather(*tasks)
-            if res is None:
-                res = []
-                for i in range(len(result_lists)):
-                    res.append([result_lists[i]])
-            else:
-                for i in range(len(res)):
-                    res[i].append(result_lists[i])
-        
-        for i in range(len(res)):
-            fused = self._fuse_results(res[i])
+        tasks = [r.retrieve_batch(all_queries) for r in self.retrievers]
+        results_per_retriever = await asyncio.gather(*tasks)
+
+        fused_all = []
+        for res in results_per_retriever:
+            fused = self._fuse_results(res)
             fused.sort(key=lambda x: x["score"], reverse=True)
-            res[i] = fused[:top_k] if top_k else fused
+            fused_all.append(fused)
 
-        fused = self._fuse_results(res)
+        if len(fused_all) == 1:
+            return fused_all[0][:top_k]
+
+        final_fused = self._fuse_results(fused_all)
+        final_fused.sort(key=lambda x: x["score"], reverse=True)
         
-        fused.sort(key=lambda x: x["score"], reverse=True)
-        return fused[:top_k] if top_k else fused
+        return final_fused[:top_k]
     
-    async def retrieve_batch(self, queries: List[str]):
-        top_k = self.top_k
-        for query in queries: 
-            tasks = [self._expand_queries(query) for query in queries]
-            expanded_queries_list = await asyncio.gather(*tasks)
-            
-            for i in range(len(expanded_queries_list)):
-                    expanded_queries_list[i].extend([queries[i]])
+    async def retrieve_batch(self, queries: List[str], top_k: int = None):
+        if top_k is None:
+            top_k = self.top_k
 
-        batch_final = []
-        Q = len(expanded_queries_list)
-        for qi in range(Q):
-            for query in expanded_queries_list[qi]:
-                tasks = [r.retrieve(query) for r in self.retrievers]
-                qi_results = None
-                result_lists = await asyncio.gather(*tasks)
-                if qi_results is None:
-                    qi_results = []
-                    for i in range(len(result_lists)):
-                        qi_results.append([result_lists[i]])
-                else:
-                    for i in range(len(qi_results)):
-                        qi_results[i].append(result_lists[i])
-            
-            # TODO: fuse 在一次
-            for i in range(len(qi_results)):
-                fused = self._fuse_results(qi_results[i])
+        expand_tasks = [self._expand_queries(q) for q in queries]
+        expanded_list = await asyncio.gather(*expand_tasks)
+        for i in range(len(queries)):
+            expanded_list[i] = [queries[i]] + expanded_list[i]
+
+        flat_queries = [q for expanded in expanded_list for q in expanded]
+
+        tasks = [r.retrieve_batch(flat_queries) for r in self.retrievers]
+        results_per_retriever = await asyncio.gather(*tasks)
+
+        split_results = []
+        for retr_res in results_per_retriever:
+            per_query = []
+            idx = 0
+            for expanded in expanded_list:
+                L = len(expanded)
+                per_query.append(retr_res[idx:idx+L])
+                idx += L
+            split_results.append(per_query)
+
+        for r in range(len(split_results)):
+            for q in range(len(split_results[r])):
+                fused = self._fuse_results(split_results[r][q])
                 fused.sort(key=lambda x: x["score"], reverse=True)
-                qi_results[i] = fused[:top_k] if top_k else fused
-            
-            fused = self._fuse_results(qi_results)
+                split_results[r][q] = fused
+
+        if len(self.retrievers) == 1:
+            return [
+                split_results[0][q][:top_k]
+                for q in range(len(queries))
+            ]
+
+        final_results = []
+        num_queries = len(queries)
+        for q in range(num_queries):
+            per_query_across_retrievers = [
+                split_results[r][q]
+                for r in range(len(self.retrievers))
+            ]
+            fused = self._fuse_results(per_query_across_retrievers)
             fused.sort(key=lambda x: x["score"], reverse=True)
-            batch_final.append(fused[:top_k] if top_k else fused)
-        
-        return batch_final
+            final_results.append(fused[:top_k])
+
+        return final_results
 
     async def _expand_queries(self, query: str) -> List[str]:
         prompt = QUERY_EXPAND_PROMPT.format(user_query=query)
