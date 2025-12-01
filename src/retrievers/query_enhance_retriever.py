@@ -1,8 +1,7 @@
 import asyncio
-import re
 import json
+import re
 from typing import Any, Dict, List, Optional
-
 
 from ..core.client.llm_client import AsyncLLMChat
 from .base_retriever import BaseRetriever
@@ -44,6 +43,8 @@ class QueryEnhanceRetriever(BaseRetriever):
                 ):
         super().__init__(top_k=top_k)
         self.retrievers = retrievers
+        if len(retrievers) < 2:
+            self.logger.warning("QueryEnhanceRetriever initialized with less than two retrievers. fusion may be unnecessary.")
         self.llmchater = llmchater
         self.fusion_method = fusion_method
         self.rrf_k = rrf_k
@@ -52,7 +53,8 @@ class QueryEnhanceRetriever(BaseRetriever):
         if self.fusion_method == "weighted":
             if weights is None or len(weights) != len(retrievers):
                 raise ValueError("Weights must be provided and match the number of retrievers for weighted fusion.")
-    
+        self.logger.info("QueryEnhanceRetriever initialized.")
+        
     @classmethod
     def from_config(cls, config:Dict):
         """
@@ -127,6 +129,7 @@ class QueryEnhanceRetriever(BaseRetriever):
             fused_all.append(fused)
 
         if len(fused_all) == 1:
+            self.logger.info("Only one retriever used; skipping fusion.")
             return fused_all[0][:top_k]
 
         final_fused = self._fuse_results(fused_all)
@@ -165,6 +168,7 @@ class QueryEnhanceRetriever(BaseRetriever):
                 split_results[r][q] = fused
 
         if len(self.retrievers) == 1:
+            self.logger.info("Only one retriever used; skipping fusion.")
             return [
                 split_results[0][q][:top_k]
                 for q in range(len(queries))

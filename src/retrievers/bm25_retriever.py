@@ -16,6 +16,7 @@ class BM25Retriever(BaseRetriever):
         ):
         super().__init__(top_k=top_k, dedup_key=dedup_key, dedup_fn=dedup_fn)
         self.index = index
+        self.logger.info("BM25Retriever initialized.")
         
     @classmethod
     def from_config(cls, config):

@@ -1,5 +1,6 @@
+import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Callable, Dict, List
 
 
 class BaseRetriever(ABC):
@@ -14,9 +15,21 @@ class BaseRetriever(ABC):
             dedup_fn: Callable = None
 
         ):
+        self.logger = self._setup_logger()
         self.top_k = top_k
         self.dedup_key = dedup_key
         self.dedup_fn = dedup_fn
+        
+    def _setup_logger(self) -> logging.Logger:
+        logger = logging.getLogger(self.__class__.__name__)
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            ))
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+        return logger
 
     @classmethod
     @abstractmethod

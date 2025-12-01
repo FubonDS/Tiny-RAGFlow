@@ -17,6 +17,7 @@ class RerankRetriever(BaseRetriever):
         super().__init__(top_k=top_k)
         self.base_retriever = base_retriever
         self.reranker = reranker
+        self.logger.info("RerankRetriever initialized.")
         
     @classmethod
     def from_config(cls, config: Dict):

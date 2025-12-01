@@ -25,7 +25,7 @@ class QdrantMultivectorRetriever(BaseRetriever):
         self.embedder = embedder
 
         self.re_emoji = re.compile(r"[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\u2600-\u26FF\u2700-\u27BF]+")
-    
+        self.logger.info("QdrantMultivectorRetriever initialized.")
 
     @classmethod
     def from_config(cls, config: Dict):
@@ -124,7 +124,9 @@ class QdrantRetriever(BaseRetriever):
         self.embedder = embedder
         
         self.re_emoji = re.compile(r"[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\u2600-\u26FF\u2700-\u27BF]+")
-    
+        self.logger.info("QdrantRetriever initialized.")
+            
+            
     @classmethod
     def from_config(cls, config: Dict):
         index = QdrantIndex(config["index_config"], auto_load=True)

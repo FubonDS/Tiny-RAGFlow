@@ -17,6 +17,9 @@ class HybridRetriever(BaseRetriever):
     ):
         super().__init__(top_k=top_k)
         self.retrievers = retrievers
+        if len(retrievers) < 2:
+            raise ValueError("HybridRetriever requires at least two retrievers.")
+        
         self.fusion_method = fusion_method
         self.weights = weights
         self.rrf_k = rrf_k
@@ -24,7 +27,8 @@ class HybridRetriever(BaseRetriever):
         if self.fusion_method == "weighted":
             if weights is None or len(weights) != len(retrievers):
                 raise ValueError("Weights must be provided and match the number of retrievers for weighted fusion.")
-    
+        self.logger.info("HybridRetriever initialized.")
+        
     @classmethod
     def from_config(cls, config: Dict):
         """
