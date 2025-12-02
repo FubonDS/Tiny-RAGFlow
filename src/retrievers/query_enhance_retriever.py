@@ -7,8 +7,8 @@ from ..core.client.llm_client import AsyncLLMChat
 from .base_retriever import BaseRetriever
 from .retriever_registry import RETRIEVER_REGISTRY
 
-QUERY_EXPAND_PROMPT = """
-You are an AI language model assistant. Your task is to generate 3 \n 
+QUERY_EXPAND_PROMPT_PARAPHRASE_EXPANSION = """
+You are an AI language model assistant. Your task is to generate {query_expand_number} \n 
 different versions of the given user question to retrieve relevant documents from a vector \n
 database. By generating multiple perspectives on the user question, your goal is to help \n
 the user overcome some of the limitations of the distance-based similarity search. \n
@@ -31,6 +31,73 @@ the user overcome some of the limitations of the distance-based similarity searc
 擴展查詢：
 """
 
+QUERY_EXPAND_PROMPT_SUB_QUESTION_DECOMPOSITION = """
+You are an AI assistant specialized in query decomposition. 
+Your task is to analyze the given user question and break it down into {query_expand_number} 
+smaller, independent sub-questions. These sub-questions should reveal the 
+different aspects, angles, or information needs required to fully answer the 
+original question.
+
+--- Guidelines ---
+1. Each sub-question must focus on one specific aspect of the original query.
+2. The sub-questions must be semantically relevant to the user’s intent.
+
+範例：
+原始問題：我想知道信用卡年費怎麼收？
+查詢分解：
+{{
+    "original_query": "我想知道信用卡年費怎麼收？",
+    "sub_questions": [
+        "不同信用卡的年費金額是否相同？",
+        "信用卡年費的計算方式是什麼？",
+        "哪些條件可以減免信用卡年費？",
+        "如果沒有使用信用卡，還需要支付年費嗎？"
+    ]
+}}
+
+請根據以下原始問題產生分解後的子問題，並以相同格式輸出：
+原始問題：{user_query}
+查詢分解：
+"""
+
+QUERY_EXPAND_PROMPT_HYDE_EXPANSION = """
+You are an AI assistant specialized in Hypothetical Document Expansion (HyDE).  
+Your task is to generate a short hypothetical passage that could reasonably 
+appear in a knowledge base and would answer the user's question. The passage 
+should sound factual, neutral, and informative, but it does not need to be 
+correct — it only needs to be realistic enough to help retrieval.
+
+After generating the passage, rewrite the content into {query_expand_number} 
+search queries that capture the key concepts from the hypothetical passage.
+
+--- Guidelines for HyDE Passage ---
+1. The passage MUST look like it was extracted from an article, FAQ, financial 
+   guide, or knowledge base.
+2. The passage MUST be concise (3–5 sentences).
+--- Guidelines for Expanded Queries ---
+1. Each query must be derived from the hypothetical passage.
+
+範例：
+原始問題：我想知道信用卡年費怎麼收？
+假設性文件擴展：
+{{
+    "original_query": "我想知道信用卡年費怎麼收？",
+    "hypothetical_passage": "大多數信用卡會依卡片等級收取固定年費，例如普卡年費較低，而高端卡年費較高。銀行通常會在每年卡片到期月自動扣收，並提供首年免年費或常用交易達標後退費的制度。持卡人也可透過綁定電子帳單或設定自動付款來確保年費扣款流程順利。",
+    "expanded_queries": [
+        "信用卡年費是依照卡片等級如何計算？",
+        "信用卡年費通常在什麼時間點扣款？",
+        "哪些條件可以取得信用卡的免年費優惠？"
+    ]
+}}
+
+請根據以下原始問題產生假設性文件及擴展查詢，並以相同格式輸出：
+原始問題：{user_query}
+假設性文件擴展：
+"""
+
+
+
+
 class QueryEnhanceRetriever(BaseRetriever):
     retriever_type = "queryenhance"
     def __init__(self, 
@@ -39,7 +106,8 @@ class QueryEnhanceRetriever(BaseRetriever):
                  fusion_method: str = "rrf",
                  top_k: int = 5,
                  rrf_k: int = 60,
-                 weights: Optional[List[float]] = None
+                 weights: Optional[List[float]] = None,
+                 query_extension_config: Optional[Dict] = None
                 ):
         super().__init__(top_k=top_k)
         self.retrievers = retrievers
@@ -49,6 +117,10 @@ class QueryEnhanceRetriever(BaseRetriever):
         self.fusion_method = fusion_method
         self.rrf_k = rrf_k
         self.weights = weights
+        self.query_extension_config = query_extension_config
+        self.query_expand_number = query_extension_config.get("query_expand_number", 3) if query_extension_config else 3
+        self.query_expansion_method = query_extension_config.get("method", "paraphrase") if query_extension_config else "paraphrase"
+        self.logger.info(f"Query expansion method: {self.query_expansion_method}, number of expansions: {self.query_expand_number}")
         
         if self.fusion_method == "weighted":
             if weights is None or len(weights) != len(retrievers):
@@ -80,7 +152,11 @@ class QueryEnhanceRetriever(BaseRetriever):
             "fusion_method": "rrf",
             "rrf_k": 60,
             "top_k": 5,
-
+            "query_extension_config": {
+                "method": "hyde"  # or "paraphrase" or "sub_question",
+                "query_expand_number": 3,
+            },
+            
             "llm_model": "Qwen2.5-32B-Instruct-GPTQ-Int4",
             "model_config_path": "./config/models.yaml"
         }
@@ -109,7 +185,8 @@ class QueryEnhanceRetriever(BaseRetriever):
                 fusion_method=config.get("fusion_method", "rrf"),
                 rrf_k=config.get("rrf_k", 60),
                 weights=config.get("weights", None),
-                top_k = config.get("top_k", 5)
+                top_k = config.get("top_k", 5),
+                query_extension_config = config.get("query_extension_config", None)
                 )
     
     async def retrieve(self, query: str, top_k: int = None) -> List[Dict[str, Any]]:
@@ -137,7 +214,7 @@ class QueryEnhanceRetriever(BaseRetriever):
         
         return final_fused[:top_k]
     
-    async def retrieve_batch(self, queries: List[str], top_k: int = None):
+    async def retrieve_batch(self, queries: List[str], top_k: int = None) -> List[List[Dict[str, Any]]]:
         if top_k is None:
             top_k = self.top_k
 
@@ -188,10 +265,21 @@ class QueryEnhanceRetriever(BaseRetriever):
         return final_results
 
     async def _expand_queries(self, query: str) -> List[str]:
-        prompt = QUERY_EXPAND_PROMPT.format(user_query=query)
+        if self.query_expansion_method == "paraphrase":
+            prompt = QUERY_EXPAND_PROMPT_PARAPHRASE_EXPANSION.format(user_query=query, query_expand_number=self.query_expand_number)
+            key = "expanded_queries"
+        elif self.query_expansion_method == "sub_question":
+            prompt = QUERY_EXPAND_PROMPT_SUB_QUESTION_DECOMPOSITION.format(user_query=query, query_expand_number=self.query_expand_number)
+            key = "sub_questions"
+        elif self.query_expansion_method == "hyde":
+            prompt = QUERY_EXPAND_PROMPT_HYDE_EXPANSION.format(user_query=query, query_expand_number=self.query_expand_number)
+            key = "expanded_queries"
+        else:
+            raise ValueError(f"Unknown query expansion method: {self.query_expansion_method}")
+        
         response, _ = await self.llmchater.chat(prompt)
         response = self._normalize_json_response(response)
-        response = json.loads(response)['expanded_queries']
+        response = json.loads(response)[key]
         return response
 
     def _normalize_json_response(self, response: str) -> str:
