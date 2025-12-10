@@ -5,7 +5,6 @@
 ## 目錄
 
 -   [架構](#架構)
--   [代碼架構](#代碼架構)
 -   [資料集設定&創建 index](#資料集設定創建-index)
 -   [使用方法](#使用方法)
 -   [評測方法](#評測方法)
@@ -17,7 +16,8 @@
 2025-11-20 新增 qdrant retrival 方法(單向量、多向量)
 2025-11-23 新增多向量 reranker 召回
 2025-11-24 新增評估模組
-2025-12-10 更新配置
+2025-11-28 新增 JinaReranker 支持
+2025-12-10 新增多意圖評估模組
 ```
 
 ## 架構
@@ -68,97 +68,6 @@ flowchart TD
     RK --> RL[General Reranker]
     RL --> RC[Rerank Client]
     RC --> CFG3[models.yaml]
-```
-
-## 代碼架構
-
-```
-rag_demo/
-├── config/                      # 配置文件目錄
-│   ├── faiss.yaml              # FAISS 索引配置（維度、索引類型、路徑等）
-│   ├── qdrant.yaml              # qdrant 索引配置（維度、索引類型、路徑等）
-│   ├── bm25.yaml               # BM25 索引配置（參數、分詞器設定）
-│   ├── models.yaml             # 模型配置（LLM、Embedding 模型的 API 設定）
-│   └── tokenizer/              # 分詞器配置目錄
-│       ├── stopwords.txt       # 停用詞列表
-│       └── user_dict.txt       # 自定義詞典
-│
-├── data/                        # 資料存儲目錄
-│   ├── qdrant_dense_storage/            # qdrant資料index
-│   ├── dataset.json            # 原始資料集（JSON 格式）
-│   ├── index_test.faiss        # FAISS 向量索引文件
-│   └── bm25_index.pkl          # BM25 索引文件
-│
-├── scripts/                     # 可執行腳本目錄
-│   ├── __init__.py
-│   ├── create_faiss_index.py   # 創建新的 FAISS 索引
-│   ├── search_faiss.py         # 搜索 FAISS 索引
-│   ├── update_faiss_index.py   # 更新現有 FAISS 索引
-│   ├── create_qdrant_index.py   # 創建新的 qdrant 索引
-│   ├── search_qdrant.py         # 搜索 qdrant 索引
-│   ├── update_qdrant_index.py   # 更新現有 qdrant 索引
-│   ├── create_qdrant_multi_index.py   # 創建新的 qdrant_multi 索引
-│   ├── qdrant_multi.py         # 搜索 qdrant_multi 索引
-│   ├── update_qdrant_multi_index.py   # 更新現有 qdrant_multi 索引
-│   ├── create_bm25_index.py    # 創建新的 BM25 索引
-│   ├── search_bm25.py          # 搜索 BM25 索引
-│   └── update_bm25_index.py    # 更新現有 BM25 索引
-│
-├── src/                         # 核心源代碼目錄
-│   ├── __init__.py
-│   ├── core/                    # 核心功能模組
-│   │   ├── __init__.py
-│   │   ├── base_index.py       # 索引基礎抽象類別
-│   │   ├── faiss_index.py      # FAISS 索引管理
-│   │   ├── qdrant_index.py      # qdrant 索引管理
-│   │   ├── bm25_index.py       # BM25 索引管理
-│   │   ├── tokenizer.py        # 中文分詞器（基於 jieba）
-│   │   └── client/
-│   │       ├── embedding_rerank_client.py  # Embedding 和 Rerank 模型客戶端
-│   │       └── llm_client.py               # LLM 客戶端
-│   │
-│   ├── retrievers/              # 檢索器模組
-│   │   ├── __init__.py
-│   │   ├── base_retriever.py   # 檢索器基礎抽象類別
-│   │   ├── faiss_retriever.py  # FAISS 檢索器
-│   │   ├── qdrant_retriever.py  # qdrant 檢索器
-│   │   ├── bm25_retriever.py   # BM25 檢索器
-│   │   ├── hybrid_retriever.py # 混合檢索器（支援多種融合策略）
-│   │   └── rerank_retriever.py # Rerank 檢索器（在檢索後重排序）
-│   │
-│   ├── evaluation/
-│   │   ├── __init__.py
-│   │   ├── dataset_loader.py
-│   │   ├── evaluator.py
-│   │   ├── metrics.py
-│   │   ├── report_builder.py
-│   │   ├── retriever_benchmark.py
-│   │
-│   ├── query_enhancers/         # 查詢增強模組
-│   │   ├── __init__.py
-│   │   ├── base_query_enhancer.py    # 查詢增強器基礎抽象類別
-│   │   └── llm_rewrite_enhancer.py   # LLM 查詢改寫增強器
-│   │
-│   ├── rerankers/               # 重排序模組
-│   │   ├── __init__.py
-│   │   ├── base_reranker.py    # 重排序器基礎類別
-│   │   └── general_reranker.py # 通用重排序（基於 Reranking 模型）
-│   │   └── multivector_reranker.py # 通用重排序（基於 multivector Reranking 模型）
-│   │
-│   ├── pipelines/
-│   │   ├── __init__.py
-│   │   ├── faiss_ingestion.py
-│   │   ├── qdrant_ingestion.py
-│   │   ├── bm25_ingestion.py
-│   │   └── query_retrieval_pipeline.py  # 查詢檢索（查詢增強+檢索+融合）
-│   │
-│   └── utils/
-│       ├── __init__.py
-│       └── utils.py
-│
-├── test/
-├── requirements.txt
-└── README.md
 ```
 
 ## 資料集設定創建 index
