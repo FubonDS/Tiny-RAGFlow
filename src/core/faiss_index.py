@@ -31,6 +31,7 @@ class FaissIndex(BaseIndex):
             self.load()
         else:
             self.logger.info(f"Initialized FAISS index: {self.index_config}, normalize={self.normalize}")
+            os.makedirs(os.path.dirname(self.index_path), exist_ok=True)
     
     def _normalize(self, vec: np.ndarray):
         norm = np.linalg.norm(vec, axis=1, keepdims=True)

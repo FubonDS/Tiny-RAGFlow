@@ -3,8 +3,8 @@ import os
 import time
 from datetime import datetime
 import logging
-from .dataset_loader import EvaluationDataset
-from .evaluator import RetrieverEvaluator
+from .dataset_loader import EvaluationDataset, MultiIntentEvaluationDataset
+from .evaluator import RetrieverEvaluator, MultiIntentRetrieverEvaluator
 from .report_builder import BenchmarkReportBuilder
 
 
@@ -12,12 +12,17 @@ class RetrieverBenchmark:
     def __init__(
         self,
         retrievers: List[tuple],
-        eval_dataset: EvaluationDataset,
+        eval_dataset: Any,
+        type: str = "single"
     ):
         self.retrievers = retrievers
         self.eval_dataset = eval_dataset
+        self.type = type
         self.logger = self._setup_logger()
-        
+        self.logger.info(f"Initialized RetrieverBenchmark with {len(retrievers)} retrievers on {type} intent dataset.")
+        self.eval_function = MultiIntentRetrieverEvaluator if type == "multi" else RetrieverEvaluator
+
+
     def _setup_logger(self) -> logging.Logger:
         logger = logging.getLogger(self.__class__.__name__)
         if not logger.handlers:
@@ -34,6 +39,7 @@ class RetrieverBenchmark:
         top_k: List[int] = [5],
         sort_by: tuple = None,
         batch_size: int = 8,
+        task: str = None,
         output_dir: str = "output"
     ) -> List[Dict[str, Any]]:
         self.logger.info("Starting Retriever Benchmark...")
@@ -43,14 +49,15 @@ class RetrieverBenchmark:
         results_list = []
         time_elapsed = {}
 
-        for name, retriever in self.retrievers:
-            evaluator = RetrieverEvaluator(
+        for name, retriever, task in self.retrievers:
+            evaluator = self.eval_function(
                 retriever,
-                self.eval_dataset
+                self.eval_dataset,
+                task=task
             )
 
             start_time = time.time()
-            results = await evaluator.evaluate(top_k=top_k, batch_size=batch_size)
+            results = await evaluator.evaluate(top_k=top_k, batch_size=batch_size, task=task)
             end_time = time.time()
             elapsed = end_time - start_time
             time_elapsed[name] = elapsed
@@ -90,7 +97,7 @@ class RetrieverBenchmark:
         report_json = BenchmarkReportBuilder.build_json(results_list, sort_by_str, time_elapsed)
         
         # save reports
-        file_name = f"retriever_benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        file_name = f"retriever_benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{self.type}_intent"
         with open(os.path.join(output_dir, f"{file_name}.md"), "w") as f:
             f.write(report_markdown)
             self.logger.info(f"Markdown report saved to {file_name}.md")

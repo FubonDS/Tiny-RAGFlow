@@ -38,6 +38,8 @@ class BM25Index(BaseIndex):
             self.load()
         else:
             self.logger.info(f"BM25 index initialized (empty).")
+            # create index directory if not exists
+            os.makedirs(os.path.dirname(self.index_path), exist_ok=True)
             
     def add(self, text: str, metadata: Dict[str, Any]):
         # BM25 needs to rebuild the index after adding new documents
