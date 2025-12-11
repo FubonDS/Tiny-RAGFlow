@@ -8,7 +8,11 @@ async def test_retriever():
     retriever = QdrantMultivectorRetriever.from_config({
         "index_config": "./config/qdrant.yaml",
         "embedding_model_path": "colbert-ir/colbertv2.0",
-        "top_k": 3
+        "top_k": 3,
+        "cache_config": {
+                    "enable": False,
+                    "cache_file": './cache/retriever_cache.json'
+                }
     })
 
     # 測試 query

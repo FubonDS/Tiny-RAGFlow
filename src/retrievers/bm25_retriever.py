@@ -12,11 +12,13 @@ class BM25Retriever(BaseRetriever):
             index: BM25Index, 
             top_k: int = 5,
             dedup_key: Optional[str] = None,
-            dedup_fn: Optional[Callable] = None
+            dedup_fn: Optional[Callable] = None,
+            config: Dict = None
         ):
         super().__init__(top_k=top_k, dedup_key=dedup_key, dedup_fn=dedup_fn)
         self.index = index
         self.logger.info("BM25Retriever initialized.")
+        self.config = config or {}
         
     @classmethod
     def from_config(cls, config):
@@ -25,7 +27,8 @@ class BM25Retriever(BaseRetriever):
             index=index,
             top_k=config.get("top_k", 5),
             dedup_key=config.get("dedup_key", None),
-            dedup_fn=config.get("dedup_fn", None)
+            dedup_fn=config.get("dedup_fn", None),
+            config=config
         )
 
     async def retrieve(

@@ -13,11 +13,13 @@ class RerankRetriever(BaseRetriever):
         base_retriever: BaseRetriever,
         reranker: GeneralReranker,
         top_k: int = 5,
+        config: Dict = None
     ):
         super().__init__(top_k=top_k)
         self.base_retriever = base_retriever
         self.reranker = reranker
         self.logger.info("RerankRetriever initialized.")
+        self.config = config or {}
         
     @classmethod
     def from_config(cls, config: Dict):
@@ -47,6 +49,7 @@ class RerankRetriever(BaseRetriever):
             base_retriever=base_retriever,
             reranker=reranker,
             top_k=top_k,
+            config=config
         )
         
     async def retrieve(self, query: str, top_k: int = None) -> List[Dict[str, Any]]:
