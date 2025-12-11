@@ -18,6 +18,8 @@ class QdrantIndex(BaseIndex):
         self.index_config = config['index']
 
         self.storage_path = config['paths']['storage_path']
+        os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
+        
         self.collection_name = config['paths']['collection_name']
 
         self.mode = self.index_config.get("mode", "dense")
