@@ -1,21 +1,27 @@
-import sys
-import configparser
-import logging
-import yaml
 import base64
 import imghdr
+import logging
 
+import yaml
 from openai import AsyncAzureOpenAI, AsyncOpenAI
+
+from .llm_response_cache import LLMResponseCache
 
 
 class AsyncLLMChat:
-    def __init__(self, model, config_path='./configs/models.yaml', logger=None):
+    def __init__(self, model, config_path='./configs/models.yaml', logger=None, cache_config=None):
         self.config = self.load_config(config_path)
         self.model_config = self.config['LLM_engines'][model]
         self.model = self.model_config['model']
         self.logger = logger if logger is not None else self._default_logger()
         self.logger.info(f'[LLMChat] Initializing LLMChat with model: {model}')
         self.client = self._initialize_client()
+        
+        self.enable_cache = cache_config.get('enable', True) if cache_config else False
+        if self.enable_cache:
+            cache_file = cache_config.get('cache_file', './llm_cache.json')
+            self.cache = LLMResponseCache(cache_file=cache_file)
+            self.logger.info(f'[LLMChat] LLM response caching enabled. Cache file: {cache_file}')
         
     def load_config(self, path):
         with open(path, 'r', encoding='utf-8') as file:
@@ -29,7 +35,7 @@ class AsyncLLMChat:
             
             self.logger.info(f'[LLMChat] Translation to traditional Chinese enabled')
             self.zn_converter = OpenCC('s2twp')
-        if 'gpt' in self.model and "oss" not in self.model:
+        if 'gpt' in self.model and "oss" not in self.model and self.model_config.get('azure_api_key', None):
             self.logger.info(f'[LLMChat] Initializing AzureOpenAI client')
             return AsyncAzureOpenAI(
                 azure_endpoint=self.model_config['azure_api_base'],
@@ -88,6 +94,14 @@ class AsyncLLMChat:
         if params.get('n', 1) > 1 and not multi_response:
             self.logger.info(f'[LLMChat] please turn on multi-response mode to get multi responses.')
 
+        # Check cache
+        cache_key = self.cache.make_key(self.model, history, params) if self.enable_cache else None
+        if self.enable_cache:
+            cached = await self.cache.get(cache_key)
+            if cached:
+                self.logger.info(f'[LLMChat] Cache hit for key: {cache_key}')
+                return cached['return'], history
+        
         completion = await self.client.chat.completions.create(  
             model=self.model,
             stream=stream,
@@ -98,9 +112,16 @@ class AsyncLLMChat:
 
         if stream:
             return self._handle_stream_response(completion, include_reasoning=include_reasoning)
-        else:
-            response = await self._handle_response(completion, multi_response=multi_response, include_reasoning=include_reasoning)
-            return response, history
+        response = await self._handle_response(completion, multi_response=multi_response, include_reasoning=include_reasoning)
+        
+        if self.enable_cache:
+            await self.cache.set(
+                cache_key,
+                result=response,
+                model=self.model
+            )
+        
+        return response, history
 
     async def _handle_response(self, completion, multi_response=False, include_reasoning=False):  
         if multi_response:
