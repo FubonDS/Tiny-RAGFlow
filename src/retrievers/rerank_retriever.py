@@ -53,7 +53,7 @@ class RerankRetriever(BaseRetriever):
         if top_k is None:
             top_k = self.top_k
             
-        candidates = await self.base_retriever.retrieve(query, top_k=top_k)
+        candidates = await self.base_retriever.retrieve(query)
         reranked = await self.reranker.rerank(query, candidates)
         
         return reranked[:top_k]
@@ -63,10 +63,13 @@ class RerankRetriever(BaseRetriever):
     ) -> List[List[Dict[str, Any]]]:
         if top_k is None:
             top_k = self.top_k
-        candidates_batch = await self.base_retriever.retrieve_batch(queries, top_k=top_k)
+        candidates_batch = await self.base_retriever.retrieve_batch(queries)
         reranked_batch = await self.reranker.rerank_batch(
             queries=queries,
             documents_list=candidates_batch
         )
+        reranked_batch = [
+            reranked[:top_k] for reranked in reranked_batch
+        ]
         return reranked_batch
         
