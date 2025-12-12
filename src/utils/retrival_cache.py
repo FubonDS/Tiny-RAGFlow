@@ -23,7 +23,7 @@ class RetrievalCacheManager:
             "config": config or {}
         }
         raw = json.dumps(payload, sort_keys=True, ensure_ascii=False)
-        return hashlib.md5(raw.encode("utf-8")).hexdigest()
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     async def get(self, key):
         return self.cache.get(key)

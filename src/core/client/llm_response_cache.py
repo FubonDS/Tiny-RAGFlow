@@ -34,16 +34,15 @@ class LLMResponseCache:
             "messages": messages,
             "params": params
         }, ensure_ascii=False, sort_keys=True)
-        return hashlib.md5(raw.encode("utf-8")).hexdigest()
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
     
     async def get(self, key):
         return self.cache.get(key, None)
     
     async def set(self, key, result, model):
-        async with self.lock:
-            self.cache[key] = {
-                "return": result,
-                "model": model
-            }
-            await self._save()
+        self.cache[key] = {
+            "return": result,
+            "model": model
+        }
+        await self._save()
         

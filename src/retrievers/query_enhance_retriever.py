@@ -7,6 +7,11 @@ from ..core.client.llm_client import AsyncLLMChat
 from .base_retriever import BaseRetriever
 from .retriever_registry import RETRIEVER_REGISTRY
 
+PARAMS = {
+    "temperature": 0.2,
+    "max_tokens": 2000
+}
+
 QUERY_EXPAND_PROMPT_PARAPHRASE_EXPANSION = """
 You are an AI language model assistant. Your task is to generate {query_expand_number} \n 
 different versions of the given user question to retrieve relevant documents from a vector \n
@@ -31,34 +36,44 @@ the user overcome some of the limitations of the distance-based similarity searc
 擴展查詢：
 """
 
-QUERY_EXPAND_PROMPT_SUB_QUESTION_DECOMPOSITION = """
-You are an AI assistant specialized in query decomposition. 
-Your task is to analyze the given user question and break it down into {query_expand_number} 
-smaller, independent sub-questions. These sub-questions should reveal the 
-different aspects, angles, or information needs required to fully answer the 
-original question.
 
---- Guidelines ---
-1. Each sub-question must focus on one specific aspect of the original query.
-2. The sub-questions must be semantically relevant to the user’s intent.
 
-範例：
-原始問題：我想知道信用卡年費怎麼收？
-查詢分解：
+QUERY_EXPAND_PROMPT_SINGLE_INTENT_DECOMPOSITION = """
+你是一個專精於查詢拆解的助理。你的任務是：
+- 分析使用者原始問題，判斷是否包含多個意圖。
+- 如果包含多個意圖，將其拆解成 {query_expand_number} 個「單一意圖」的子問題。
+- 如果原始問題只有單一意圖，則輸出空的 sub_questions 陣列。
+
+--- 規範 ---
+1. 每個子問題必須聚焦一個明確的意圖或需求。
+2. 子問題必須與原始問題語義相關，不做額外延伸。
+3. 保持自然語言表達，避免過度簡化或失去上下文。
+4. 如果判斷為單一意圖，sub_questions = []。
+
+--- 範例 ---
+原始問題：我想知道信用卡年費怎麼收？還有哪些條件可以免年費？
+輸出：
 {{
-    "original_query": "我想知道信用卡年費怎麼收？",
+    "original_query": "我想知道信用卡年費怎麼收？還有哪些條件可以免年費？",
     "sub_questions": [
-        "不同信用卡的年費金額是否相同？",
-        "信用卡年費的計算方式是什麼？",
-        "哪些條件可以減免信用卡年費？",
-        "如果沒有使用信用卡，還需要支付年費嗎？"
+        "信用卡年費的收取方式是什麼？",
+        "哪些條件可以免除信用卡年費？"
     ]
 }}
 
-請根據以下原始問題產生分解後的子問題，並以相同格式輸出：
+原始問題：信用卡年費怎麼收？
+輸出：
+{{
+    "original_query": "信用卡年費怎麼收？",
+    "sub_questions": []
+}}
+
+請根據以下原始問題產生拆解後的子問題，並以相同格式輸出：
 原始問題：{user_query}
-查詢分解：
+輸出：
 """
+
+
 
 QUERY_EXPAND_PROMPT_HYDE_EXPANSION = """
 You are an AI assistant specialized in Hypothetical Document Expansion (HyDE).  
@@ -158,12 +173,17 @@ class QueryEnhanceRetriever(BaseRetriever):
             },
             
             "llm_model": "Qwen2.5-32B-Instruct-GPTQ-Int4",
-            "model_config_path": "./config/models.yaml"
+            "model_config_path": "./config/models.yaml",
+            "cache_config": {
+                    "enable": True,
+                    "cache_file": './cache/query_enhance/retriever_cache.json'
+                }
         }
         """
         llmchater = AsyncLLMChat(
             model=config["llm_model"],
-            config_path=config["model_config_path"]
+            config_path=config["model_config_path"],
+            cache_config=config.get("cache_config", None)
             )
         
         retrievers_cfg = config["retrievers"]
@@ -269,7 +289,7 @@ class QueryEnhanceRetriever(BaseRetriever):
             prompt = QUERY_EXPAND_PROMPT_PARAPHRASE_EXPANSION.format(user_query=query, query_expand_number=self.query_expand_number)
             key = "expanded_queries"
         elif self.query_expansion_method == "sub_question":
-            prompt = QUERY_EXPAND_PROMPT_SUB_QUESTION_DECOMPOSITION.format(user_query=query, query_expand_number=self.query_expand_number)
+            prompt = QUERY_EXPAND_PROMPT_SINGLE_INTENT_DECOMPOSITION.format(user_query=query, query_expand_number=self.query_expand_number)
             key = "sub_questions"
         elif self.query_expansion_method == "hyde":
             prompt = QUERY_EXPAND_PROMPT_HYDE_EXPANSION.format(user_query=query, query_expand_number=self.query_expand_number)
@@ -277,7 +297,7 @@ class QueryEnhanceRetriever(BaseRetriever):
         else:
             raise ValueError(f"Unknown query expansion method: {self.query_expansion_method}")
         
-        response, _ = await self.llmchater.chat(prompt)
+        response, _ = await self.llmchater.chat(prompt, params=PARAMS)
         response = self._normalize_json_response(response)
         response = json.loads(response)[key]
         return response

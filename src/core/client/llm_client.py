@@ -1,5 +1,6 @@
 import base64
 import imghdr
+import os
 import logging
 
 import yaml
@@ -13,15 +14,27 @@ class AsyncLLMChat:
         self.config = self.load_config(config_path)
         self.model_config = self.config['LLM_engines'][model]
         self.model = self.model_config['model']
-        self.logger = logger if logger is not None else self._default_logger()
+        self.logger = logger if logger is not None else self._setup_logger()
         self.logger.info(f'[LLMChat] Initializing LLMChat with model: {model}')
         self.client = self._initialize_client()
         
         self.enable_cache = cache_config.get('enable', True) if cache_config else False
         if self.enable_cache:
             cache_file = cache_config.get('cache_file', './llm_cache.json')
+            os.makedirs(os.path.dirname(cache_file), exist_ok=True)
             self.cache = LLMResponseCache(cache_file=cache_file)
             self.logger.info(f'[LLMChat] LLM response caching enabled. Cache file: {cache_file}')
+
+    def _setup_logger(self) -> logging.Logger:
+        logger = logging.getLogger(self.__class__.__name__)
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            ))
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+        return logger
         
     def load_config(self, path):
         with open(path, 'r', encoding='utf-8') as file:
@@ -47,12 +60,7 @@ class AsyncLLMChat:
             return AsyncOpenAI(
                 api_key=self.model_config['local_api_key'],
                 base_url=self.model_config['local_base_url']
-            )
-           
-    def _default_logger(self):
-        logger = logging.getLogger("LLMChatLogger")
-        logger.addHandler(logging.NullHandler())
-        return logger           
+            )        
     
     def initialize_history(self, system_message, user_message):
         if system_message is None:
