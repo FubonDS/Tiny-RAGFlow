@@ -17,14 +17,15 @@ async def test():
         "reranker": {
             "type": "jina_reranker",
             "config": {
-                "model_path": "./models/jina-reranker-v3"
+                "model_path": "/home/max/rag_demo/models/jina-reranker-v3",
+                "conbine_metadata_keys": ["metadata.question"]
             }
         },
         "top_k": 3
     }
     retriever = RerankRetriever.from_config(config)
 
-    query = "How to apply for a new credit card from the bank?"
+    query = "信用卡"
     results = await retriever.retrieve(query)
 
     for r in results:

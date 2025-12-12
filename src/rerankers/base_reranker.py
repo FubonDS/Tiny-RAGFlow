@@ -18,6 +18,16 @@ class BaseReranker(ABC):
             logger.setLevel(logging.INFO)
         return logger
     
+    def _get_metadata_value(self, meta: Dict, key: str):
+        parts = key.split(".")
+        v = meta
+        try:
+            for p in parts:
+                v = v[p]
+            return v
+        except Exception:
+            return None
+    
     @classmethod
     @abstractmethod
     def from_config(cls, config: Dict):
