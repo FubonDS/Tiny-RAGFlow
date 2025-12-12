@@ -67,7 +67,7 @@ class BM25Retriever(BaseRetriever):
 
             cached = await self.cache.get(cache_key)
             if cached:
-                self.logger.info(f"[BM25Retriever] Cache hit for query='{query_norm}'")
+                self.logger.info(f"[BM25Retriever] Cache hit for query='{query}'")
                 return cached["results"]
 
         scores, docs = self.index.search(
