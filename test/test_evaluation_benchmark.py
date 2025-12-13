@@ -11,123 +11,111 @@ from src.retrievers.qdrant_retriever import QdrantRetriever, QdrantMultivectorRe
 
 
 async def main():
-    dataset = EvaluationDataset.from_json("./data/evaluation_dataset.json")
+    dataset = EvaluationDataset.from_json("./data/bonnieQA/evaluation_dataset.json")
     
     # faiss
-    faiss_retriever = FaissRetriever.from_config({
+    faiss_m3e_base_retriever = FaissRetriever.from_config({
         "index_config": "./config/faiss.yaml",
-        "embedding_model": "m3e-base",
-        "model_config_path": "./config/models.yaml",
-        "top_k": 3,
-        "dedup_key": "metadata.A"
-    })
-    # bm25
-    bm25_retriever = BM25Retriever.from_config({
-        "index_config": "./config/bm25.yaml",
-        "top_k": 3,
-        "dedup_key": "metadata.A"
-    })
-    
-    # htbrid
-    hybrid_config = {
-        "retrievers": [
-            {
-                "type": "faiss",
-                "config": {
-                    "index_config": "./config/faiss.yaml",
-                    "embedding_model": "m3e-base",
-                    "model_config_path": "./config/models.yaml",
-                    "top_k": 3,
-                    "dedup_key": "metadata.A"
+                "embedding_model": "m3e-base",
+                "model_config_path": "./config/models.yaml",
+                "top_k": 50,
+                "dedup_key": "metadata.answer",
+                "cache_config": {
+                    "enable": True,
+                    "cache_file": './cache/retriever_cache.json'
                 }
-            },
-            {
-                "type": "bm25",
-                "config": {
-                    "index_config": "./config/bm25.yaml",
-                    "top_k": 3,
-                    "dedup_key": "metadata.A"
-                }
-            }
-        ],
-        "fusion_method": "rrf",
-        "rrf_k": 60,
-        "top_k": 3
-    }
-    
-    hybrid_retriever = HybridRetriever.from_config(hybrid_config)
+    })
     
     config = {
         "retriever": {
-            "type": "hybrid",
+            "type": "faiss",
             "config": {
-                    "retrievers": [
+                "index_config": "./config/faiss.yaml",
+                "embedding_model": "m3e-base",
+                "model_config_path": "./config/models.yaml",
+                "top_k": 50,
+                "dedup_key": "metadata.answer",
+                "cache_config": {
+                    "enable": True,
+                    "cache_file": './cache/retriever_cache.json'
+                }
+            }
+        },
+        "reranker": {
+            "type": "general_reranker",
+            "config": {
+                "model_name": "bge-reranker-base",
+                "config_path": "./config/models.yaml",
+                "conbine_metadata_keys": ["metadata.question"]
+            }
+        },
+        "top_k": 3
+    }
+    
+    faiss_m3e_base_retriever_rerank = RerankRetriever.from_config(config)
+    
+    
+    config = {
+        "retrievers": [
                 {
                     "type": "faiss",
                     "config": {
                         "index_config": "./config/faiss.yaml",
                         "embedding_model": "m3e-base",
                         "model_config_path": "./config/models.yaml",
-                        "top_k": 3,
-                        "dedup_key": "metadata.A"
+                        "top_k": 50,
+                        "dedup_key": "metadata.answer"
                     }
-                },
-                {
-                    "type": "bm25",
-                    "config": {
-                        "index_config": "./config/bm25.yaml",
-                        "top_k": 3,
-                        "dedup_key": "metadata.A"
                 }
+            ],
+            "fusion_method": "rrf",
+            "rrf_k": 60,
+            "top_k": 50,
+
+            "query_extension_config": {
+                "method": "sub_question",  # or "paraphrase" or "sub_question",
+                "query_expand_number": 3,
+            },
+            
+            "llm_model": "gpt-5-nano",
+            "model_config_path": "./config/models.yaml",
+            "cache_config": {
+                "enable": True,
+                "cache_file": "./llm_cache.json"
             }
-        ],
-        "fusion_method": "rrf",
-        "rrf_k": 60,
-        "top_k": 3
-            }
+        }
+    rerank_config = {
+        "retriever": {
+            "type": "queryenhance",
+            "config": config
         },
         "reranker": {
             "type": "general_reranker",
             "config": {
-                "model_name": "bge-reranker-large",
+                "model_name": "bge-reranker-base",
                 "config_path": "./config/models.yaml"
             }
         },
-        "top_k": 3
+        "top_k": 2
     }
-    
-    reranker_retriever = RerankRetriever.from_config(config)
-    
-    # qdrant_retriever = QdrantMultivectorRetriever.from_config({
-    #     "index_config": "./config/qdrant.yaml",
-    #     "embedding_model_path": "colbert-ir/colbertv2.0",
-    #     "top_k": 3
-    # })
-    qdrant_retriever = QdrantRetriever.from_config({
-        "index_config": "./config/qdrant.yaml",
-        "embedding_model": "m3e-base",
-        "model_config_path": "./config/models.yaml",
-        "top_k": 3,
-        "dedup_key": "metadata.A"
-    })
-    
+    # pehybrid_retriever_rerank = RerankRetriever.from_config(rerank_config)
     
     retrievers = [
-        ("FAISS", faiss_retriever),
-        ("BM25", bm25_retriever),
-        ("Hybrid", hybrid_retriever),
-        ("Reranker-Hybrid", reranker_retriever),
-        ("Qdrant-Single", qdrant_retriever)
+        # ("PEHybrid_Rerank", pehybrid_retriever_rerank, None),
+        ("FAISS_m3e_base_Rerank", faiss_m3e_base_retriever_rerank, None),
+        # ("FAISS_m3e_base", faiss_m3e_base_retriever, None),
     ]
+    
     
     benchmark = RetrieverBenchmark(
         retrievers,
         dataset,
+        type="single"
     )
     
     results = await benchmark.run(
-        top_k=[3, 5],
-        batch_size=3,
+        top_k=[1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 20],
+        batch_size=16,
         sort_by=("MRR", 5)
     )
         
