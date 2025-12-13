@@ -39,18 +39,21 @@ the user overcome some of the limitations of the distance-based similarity searc
 
 
 QUERY_EXPAND_PROMPT_SINGLE_INTENT_DECOMPOSITION = """
-你是一個專精於查詢拆解的助理。你的任務是：
-- 分析使用者原始問題，判斷是否包含多個意圖。
-- 如果包含多個意圖，將其拆解成 {query_expand_number} 個「單一意圖」的子問題。
-- 如果原始問題只有單一意圖，則輸出空的 sub_questions 陣列。
+你是一個專精於查詢拆解與意圖評估的助理。你的任務是：
+
+1. 分析使用者原始問題，判斷是否包含多個意圖。
+2. 如果包含多個意圖，將問題拆解成 {query_expand_number} 個「單一意圖」的子問題。
+3. 同時，為每個子問題分配一個 0~1 的「重要性比例 importance_ratio」，所有比例加總必須等於 1。
+4. 如果原始問題只有單一意圖，則輸出 sub_questions = [] 並輸出 importance_ratio = []。
 
 --- 規範 ---
 1. 每個子問題必須聚焦一個明確的意圖或需求。
 2. 子問題必須與原始問題語義相關，不做額外延伸。
-3. 保持自然語言表達，避免過度簡化或失去上下文。
-4. 如果判斷為單一意圖，sub_questions = []。
+3. 重要性比例代表該子問題在回答原始問題時的「相對重要性」。
+4. 所有 importance_ratio 加總 = 1。
+5. 如果判斷為單一意圖：sub_questions = []，importance_ratio = []。
 
---- 範例 ---
+--- 範例 1 ---
 原始問題：我想知道信用卡年費怎麼收？還有哪些條件可以免年費？
 輸出：
 {{
@@ -58,20 +61,24 @@ QUERY_EXPAND_PROMPT_SINGLE_INTENT_DECOMPOSITION = """
     "sub_questions": [
         "信用卡年費的收取方式是什麼？",
         "哪些條件可以免除信用卡年費？"
-    ]
+    ],
+    "importance_ratio": [0.5, 0.5]
 }}
 
+--- 範例 2 ---
 原始問題：信用卡年費怎麼收？
 輸出：
 {{
     "original_query": "信用卡年費怎麼收？",
-    "sub_questions": []
+    "sub_questions": [],
+    "importance_ratio": []
 }}
 
-請根據以下原始問題產生拆解後的子問題，並以相同格式輸出：
+請根據以下原始問題產生拆解後的子問題及其重要性比例，並以相同 JSON 格式輸出：
 原始問題：{user_query}
 輸出：
 """
+
 
 
 
@@ -135,7 +142,9 @@ class QueryEnhanceRetriever(BaseRetriever):
         self.query_extension_config = query_extension_config
         self.query_expand_number = query_extension_config.get("query_expand_number", 3) if query_extension_config else 3
         self.query_expansion_method = query_extension_config.get("method", "paraphrase") if query_extension_config else "paraphrase"
-        self.logger.info(f"Query expansion method: {self.query_expansion_method}, number of expansions: {self.query_expand_number}")
+        self.query_alpha = query_extension_config.get("alpha", 0.3) if query_extension_config else 0.3
+        self.query_fusion_method = query_extension_config.get("fusion_method", "round_robin") if query_extension_config else "rrf"
+        self.logger.info(f"Query expansion method: {self.query_expansion_method}, number: {self.query_expand_number}, alpha: {self.query_alpha}, fusion: {self.query_fusion_method}")
         
         if self.fusion_method == "weighted":
             if weights is None or len(weights) != len(retrievers):
@@ -169,7 +178,9 @@ class QueryEnhanceRetriever(BaseRetriever):
             "top_k": 5,
             "query_extension_config": {
                 "method": "hyde"  # or "paraphrase" or "sub_question",
+                "fusion_method": "round_robin", # or "rrf"
                 "query_expand_number": 3,
+                "alpha": 0.3
             },
             
             "llm_model": "Qwen2.5-32B-Instruct-GPTQ-Int4",
@@ -209,40 +220,71 @@ class QueryEnhanceRetriever(BaseRetriever):
                 query_extension_config = config.get("query_extension_config", None)
                 )
     
-    async def retrieve(self, query: str, top_k: int = None) -> List[Dict[str, Any]]:
+    async def retrieve(self, query: str, top_k: int = None, alpha: float = None) -> List[Dict[str, Any]]:
         if top_k is None:
             top_k = self.top_k
-            
-        expansions = await self._expand_queries(query)
+        if alpha is None:
+            alpha = self.query_alpha
+
+        expansions, importance_ratios = await self._expand_queries(query)
         all_queries = [query] + expansions
+        importance_ratios = self.add_origin_query_ratio(importance_ratios, alpha=alpha)
+        num_qi = len(all_queries)
+
+        if len(importance_ratios) != num_qi:
+            self.logger.warning(
+                f"importance_ratios length {len(importance_ratios)} != num_qi {num_qi}, "
+                "fall back to uniform."
+            )
+            importance_ratios = [1.0 / num_qi] * num_qi
 
         tasks = [r.retrieve_batch(all_queries) for r in self.retrievers]
         results_per_retriever = await asyncio.gather(*tasks)
-
-        fused_all = []
-        for res in results_per_retriever:
-            fused = self._fuse_results(res)
-            fused.sort(key=lambda x: x["score"], reverse=True)
-            fused_all.append(fused)
-
-        if len(fused_all) == 1:
-            self.logger.info("Only one retriever used; skipping fusion.")
-            return fused_all[0][:top_k]
-
-        final_fused = self._fuse_results(fused_all)
-        final_fused.sort(key=lambda x: x["score"], reverse=True)
         
-        return final_fused[:top_k]
-    
-    async def retrieve_batch(self, queries: List[str], top_k: int = None) -> List[List[Dict[str, Any]]]:
+        if self.query_fusion_method == "rrf":
+            final_results = []
+            for res in results_per_retriever:
+                fused = self._fuse_results(res)
+                fused.sort(key=lambda x: x["score"], reverse=True)
+                final_results.append(fused)
+
+            if len(final_results) == 1:
+                self.logger.info("Only one retriever used; skipping fusion.")
+                return final_results[0][:top_k]
+
+            final_fused = self._fuse_results(final_results)
+            final_fused.sort(key=lambda x: x["score"], reverse=True)
+            return final_fused[:top_k]
+        elif self.query_fusion_method == "round_robin":
+            self.logger.info("Using round robin fusion for expanded queries.")
+            final_results = self._fuse_multi_retriever_results(
+                results_lists=results_per_retriever,
+                importance_ratios=importance_ratios,
+                top_k=top_k
+            )
+            return final_results
+        else:
+            raise ValueError(f"Unknown query fusion method: {self.query_fusion_method}")
+
+    async def retrieve_batch(self, queries: List[str], top_k: int = None, alpha: float = None) -> List[List[Dict[str, Any]]]:
         if top_k is None:
             top_k = self.top_k
+        if alpha is None:
+            alpha = self.query_alpha
 
         expand_tasks = [self._expand_queries(q) for q in queries]
-        expanded_list = await asyncio.gather(*expand_tasks)
-        for i in range(len(queries)):
-            expanded_list[i] = [queries[i]] + expanded_list[i]
+        results = await asyncio.gather(*expand_tasks)
+        
+        expanded_list = []
+        importance_ratios_list = []
+        
+        for i, (expanded_qs, ratios) in enumerate(results):
+            expanded_qs = [queries[i]] + list(expanded_qs)  # prepend original query
+            ratios = self.add_origin_query_ratio(list(ratios), alpha=alpha)
 
+            expanded_list.append(expanded_qs)
+            importance_ratios_list.append(ratios)
+        
         flat_queries = [q for expanded in expanded_list for q in expanded]
 
         tasks = [r.retrieve_batch(flat_queries) for r in self.retrievers]
@@ -257,50 +299,208 @@ class QueryEnhanceRetriever(BaseRetriever):
                 per_query.append(retr_res[idx:idx+L])
                 idx += L
             split_results.append(per_query)
+            
+        if self.query_fusion_method == "rrf":
+            for r in range(len(split_results)):
+                for q in range(len(split_results[r])):
+                    fused = self._fuse_results(split_results[r][q])
+                    fused.sort(key=lambda x: x["score"], reverse=True)
+                    split_results[r][q] = fused
 
-        for r in range(len(split_results)):
-            for q in range(len(split_results[r])):
-                fused = self._fuse_results(split_results[r][q])
+            if len(self.retrievers) == 1:
+                self.logger.info("Only one retriever used; skipping fusion.")
+                return [
+                    split_results[0][q][:top_k]
+                    for q in range(len(queries))
+                ]
+
+            final_results = []
+            num_queries = len(queries)
+            for q in range(num_queries):
+                per_query_across_retrievers = [
+                    split_results[r][q]
+                    for r in range(len(self.retrievers))
+                ]
+                fused = self._fuse_results(per_query_across_retrievers)
                 fused.sort(key=lambda x: x["score"], reverse=True)
-                split_results[r][q] = fused
+                final_results.append(fused[:top_k])
 
-        if len(self.retrievers) == 1:
-            self.logger.info("Only one retriever used; skipping fusion.")
-            return [
-                split_results[0][q][:top_k]
-                for q in range(len(queries))
-            ]
+            return final_results
+        elif self.query_fusion_method == "round_robin":
+            self.logger.info("Using round robin fusion for expanded queries.")
 
-        final_results = []
-        num_queries = len(queries)
-        for q in range(num_queries):
-            per_query_across_retrievers = [
-                split_results[r][q]
-                for r in range(len(self.retrievers))
+            fused_results = []
+
+            num_retrievers = len(self.retrievers)
+            num_queries = len(queries)
+
+            for qi in range(num_queries):
+                # results_lists = list of [retriever][qi] docs
+                results_lists = [split_results[r][qi] for r in range(num_retrievers)]
+
+                fused = self._fuse_multi_retriever_results(
+                    results_lists=results_lists,
+                    importance_ratios=importance_ratios_list[qi],
+                    top_k=top_k
+                )
+                fused_results.append(fused)
+
+            return fused_results
+        else:
+            raise ValueError(f"Unknown query fusion method: {self.query_fusion_method}")
+    
+    def _fuse_multi_retriever_results(
+        self,
+        results_lists: List[List[List[Dict[str, Any]]]],
+        importance_ratios: List[float],
+        top_k: int
+    ):
+        num_retrievers = len(results_lists)
+        num_qi = len(results_lists[0])
+        
+        if num_retrievers == 1:
+            self.logger.info("Only one retriever used; skip retriever-level fusion.")
+            results = results_lists[0] # first retriever
+            selected_per_qi = self.distrite_results_by_quota(
+                results=results,
+                importance_ratios=importance_ratios,
+                top_k=top_k,
+            )
+            fused = self.round_robin_sort(selected_per_qi, top_k=top_k)
+            return fused[:top_k]
+        # 多個 retriever 的結果融合
+        qi_level_results: List[List[List[Dict[str, Any]]]] = []
+        for qi in range(num_qi):
+            per_qi_across_retrievers = [
+                results_lists[r][qi]
+                for r in range(num_retrievers)
             ]
-            fused = self._fuse_results(per_query_across_retrievers)
+            qi_level_results.append(per_qi_across_retrievers)
+
+        fused_per_qi: List[List[Dict[str, Any]]] = []
+        for qi_results in qi_level_results:
+            fused = self._fuse_results(qi_results)  
             fused.sort(key=lambda x: x["score"], reverse=True)
-            final_results.append(fused[:top_k])
+            fused_per_qi.append(fused)  # [qi][docs]
 
-        return final_results
+        selected_per_qi = self.distrite_results_by_quota(
+            results=fused_per_qi,         
+            importance_ratios=importance_ratios,
+            top_k=top_k,
+        )
+
+        final_fused = self.round_robin_sort(selected_per_qi, top_k=top_k)
+        return final_fused[:top_k]
+        
+            
+    def distrite_results_by_quota(self, results: List[List[Dict[str, Any]]], importance_ratios: List[float], top_k: int):
+        """
+        results: 
+            [
+                [ {score, metadata}, ... ],  # query 1
+                [ {score, metadata}, ... ],  # query 2
+                ...
+            ]
+        importance_ratios: [r1, r2, ...]  # sum = 1
+        """
+        num_queries = len(results)
+        if num_queries == 0 or top_k <= 0:
+            return [[] for _ in range(num_queries)]
+        if num_queries != len(importance_ratios):
+            self.logger.warning("Number of results and importance ratios do not match.")
+            importance_ratios = [1.0 / num_queries] * num_queries
+        
+        total_ratio = sum(importance_ratios)
+        if total_ratio <= 0:
+            importance_ratios = [1.0 / num_queries] * num_queries
+        else:
+            importance_ratios = [r / total_ratio for r in importance_ratios]
+        
+        raw_quotas = [r * top_k for r in importance_ratios]
+        quotas = [int(q) for q in raw_quotas]
+        
+        deficit = top_k - sum(quotas)
+        if deficit > 0:
+            frac = [(i, raw_quotas[i] - quotas[i]) for i in range(num_queries)]
+            frac.sort(key=lambda x: x[1], reverse=True)
+            for i, _ in frac:
+                if deficit == 0:
+                    break
+                quotas[i] += 1
+                deficit -= 1
+
+        overflow = sum(quotas) - top_k
+        if overflow > 0:
+            sorted_idx = sorted(range(num_queries), key=lambda i: quotas[i], reverse=True)
+            for idx in sorted_idx:
+                if overflow == 0:
+                    break
+                if quotas[idx] > 0:
+                    quotas[idx] -= 1
+                    overflow -= 1
+
+        selected_per_qi: List[List[Dict[str, Any]]] = []
+        for q_idx, q_quota in enumerate(quotas):
+            docs = results[q_idx]
+            docs_sorted = sorted(docs, key=lambda x: x["score"], reverse=True)
+            selected_per_qi.append(docs_sorted[:q_quota])
+
+        return selected_per_qi
+    
+    def round_robin_sort(self, results_all_qi: List[List[Dict[str, Any]]], top_k: int):
+        rr: List[Dict[str, Any]] = []
+        layer = 0
+        while len(rr) < top_k:
+            any_added = False
+
+            for qi_results in results_all_qi:   
+                if layer < len(qi_results):
+                    rr.append(qi_results[layer])
+                    any_added = True
+                    if len(rr) == top_k:
+                        break
+
+            if not any_added:
+                break
+            layer += 1
+        return rr
+
+    def add_origin_query_ratio(self, importance_ratios, alpha=0.3):
+        """
+        importance_ratios: [r1, r2, ...]  # sum = 1
+        alpha: Q 的固定比重（建議 0.2 ~ 0.4）
+        """
+        scale = 1 - alpha
+        adjusted = [r * scale for r in importance_ratios]
+        final = [alpha] + adjusted
+        return final
 
     async def _expand_queries(self, query: str) -> List[str]:
+        key1 = None
         if self.query_expansion_method == "paraphrase":
             prompt = QUERY_EXPAND_PROMPT_PARAPHRASE_EXPANSION.format(user_query=query, query_expand_number=self.query_expand_number)
-            key = "expanded_queries"
+            key0 = "expanded_queries"
         elif self.query_expansion_method == "sub_question":
             prompt = QUERY_EXPAND_PROMPT_SINGLE_INTENT_DECOMPOSITION.format(user_query=query, query_expand_number=self.query_expand_number)
-            key = "sub_questions"
+            key0 = "sub_questions"
+            key1 = "importance_ratio"
         elif self.query_expansion_method == "hyde":
             prompt = QUERY_EXPAND_PROMPT_HYDE_EXPANSION.format(user_query=query, query_expand_number=self.query_expand_number)
-            key = "expanded_queries"
+            key0 = "expanded_queries"
         else:
             raise ValueError(f"Unknown query expansion method: {self.query_expansion_method}")
         
-        response, _ = await self.llmchater.chat(prompt, params=PARAMS)
-        response = self._normalize_json_response(response)
-        response = json.loads(response)[key]
-        return response
+        raw_response, _ = await self.llmchater.chat(prompt, params=PARAMS)
+        raw_response = self._normalize_json_response(raw_response)
+        response = json.loads(raw_response)[key0]
+        if key1:
+            importanve_ratios = json.loads(raw_response)[key1]
+            if len(response) != len(importanve_ratios):
+                self.logger.warning("Length of expanded queries and importance ratios do not match.")
+                importanve_ratios = [1.0 / len(response)] * len(response)
+        else:
+            importanve_ratios = [1.0 / len(response)] * len(response)
+        return response, importanve_ratios
 
     def _normalize_json_response(self, response: str) -> str:
         if not response:
